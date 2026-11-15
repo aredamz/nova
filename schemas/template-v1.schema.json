@@ -1,0 +1,1321 @@
+{
+  "$defs": {
+    "AnimationDef": {
+      "additionalProperties": false,
+      "properties": {
+        "keyframes": {
+          "description": "At least one keyframe, in increasing frame order.",
+          "items": {
+            "$ref": "#/$defs/KeyframeDef"
+          },
+          "type": "array"
+        },
+        "property": {
+          "description": "Property to animate, e.g. \"transform.position.y\", \"transform.scale\",\n\"transform.rotation\", \"opacity\", \"fill.color\", \"stroke.trim_end\",\n\"size.width\", \"corner_radius\", \"text.font_size\", \"text.reveal\", \"blur\",\n\"shadow.blur\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "property",
+        "keyframes"
+      ],
+      "type": "object"
+    },
+    "AssetDef": {
+      "additionalProperties": false,
+      "properties": {
+        "family": {
+          "default": null,
+          "description": "Fonts only: the family name text layers use. Defaults to the asset id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique id layers use to reference this asset.",
+          "type": "string"
+        },
+        "src": {
+          "description": "Path relative to the asset root (the template's folder by default).\nAbsolute paths, `..` and URLs are rejected.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/AssetType"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "src"
+      ],
+      "type": "object"
+    },
+    "AssetType": {
+      "enum": [
+        "image",
+        "svg",
+        "font"
+      ],
+      "type": "string"
+    },
+    "AudioDef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "src": {
+          "description": "Audio file relative to the asset root.",
+          "type": "string"
+        },
+        "start_frame": {
+          "default": null,
+          "description": "Composition frame at which the track starts. Default 0.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "volume": {
+          "default": null,
+          "description": "Linear gain, 1.0 = unchanged. Default 1.0.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "src"
+      ],
+      "type": "object"
+    },
+    "BlendModeDef": {
+      "enum": [
+        "normal",
+        "multiply",
+        "screen",
+        "overlay",
+        "darken",
+        "lighten",
+        "color_dodge",
+        "color_burn",
+        "hard_light",
+        "soft_light",
+        "difference",
+        "exclusion",
+        "add"
+      ],
+      "type": "string"
+    },
+    "Composition": {
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "default": null,
+          "description": "Opaque background colour, default black.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration_frames": {
+          "description": "Total length in frames.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fps": {
+          "$ref": "#/$defs/FpsDef",
+          "description": "Frames per second: a whole number, or `{ \"num\": 30000, \"den\": 1001 }`."
+        },
+        "height": {
+          "description": "Output height in pixels (must be even).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Output width in pixels (must be even).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "width",
+        "height",
+        "fps",
+        "duration_frames"
+      ],
+      "type": "object"
+    },
+    "EasingDef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "properties": {
+            "cubic_bezier": {
+              "items": {
+                "format": "float",
+                "type": "number"
+              },
+              "maxItems": 4,
+              "minItems": 4,
+              "type": "array"
+            }
+          },
+          "required": [
+            "cubic_bezier"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "spring": {
+              "$ref": "#/$defs/SpringDef"
+            }
+          },
+          "required": [
+            "spring"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "A named easing (\"linear\", \"step\", \"ease_in_quad\", \"ease_out_quad\",\n\"ease_in_out_quad\", \"ease_in_cubic\", \"ease_out_cubic\", \"ease_in_out_cubic\",\n\"spring\"), `{ \"cubic_bezier\": [x1, y1, x2, y2] }`, or\n`{ \"spring\": { \"stiffness\": 100, \"damping\": 10, \"mass\": 1 } }`."
+    },
+    "FillDef": {
+      "anyOf": [
+        {
+          "description": "Colour string: \"#RRGGBB\", \"#RRGGBBAA\", \"rgba(r,g,b,a)\".",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/GradientDef"
+        }
+      ]
+    },
+    "FillRuleDef": {
+      "enum": [
+        "nonzero",
+        "evenodd"
+      ],
+      "type": "string"
+    },
+    "FitDef": {
+      "enum": [
+        "fill",
+        "contain",
+        "cover",
+        "none"
+      ],
+      "type": "string"
+    },
+    "FontFamilyDef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "description": "Preferred family first, then fallbacks.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "FpsDef": {
+      "anyOf": [
+        {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "properties": {
+            "den": {
+              "default": 1,
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "num": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "num"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GradientDef": {
+      "description": "Gradient geometry is in units of the layer's box: (0,0) is its top-left\ncorner and (1,1) its bottom-right.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "default": null,
+              "description": "Start point. Default [0, 0].",
+              "items": {
+                "format": "float",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "stops": {
+              "items": {
+                "$ref": "#/$defs/StopDef"
+              },
+              "type": "array"
+            },
+            "to": {
+              "default": null,
+              "description": "End point. Default [1, 0] (left to right).",
+              "items": {
+                "format": "float",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "linear",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stops"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "center": {
+              "default": null,
+              "description": "Default [0.5, 0.5].",
+              "items": {
+                "format": "float",
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "radius": {
+              "default": null,
+              "description": "In units of the box width. Default 0.5.",
+              "format": "float",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "stops": {
+              "items": {
+                "$ref": "#/$defs/StopDef"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "radial",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "stops"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "KeyValue": {
+      "anyOf": [
+        {
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "KeyframeDef": {
+      "additionalProperties": false,
+      "properties": {
+        "easing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EasingDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Easing from this keyframe to the next. Default linear."
+        },
+        "frame": {
+          "description": "Frame relative to the layer's `start_frame`.",
+          "format": "double",
+          "type": "number"
+        },
+        "value": {
+          "$ref": "#/$defs/KeyValue",
+          "description": "A number, or a colour string for colour properties."
+        }
+      },
+      "required": [
+        "frame",
+        "value"
+      ],
+      "type": "object"
+    },
+    "Layer": {
+      "additionalProperties": false,
+      "description": "One layer. Common fields apply to every type; the rest are only valid for\nthe layer types named in their description.",
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Same as `transform.anchor`."
+        },
+        "animations": {
+          "description": "Keyframe animations of this layer's properties.",
+          "items": {
+            "$ref": "#/$defs/AnimationDef"
+          },
+          "type": "array"
+        },
+        "asset": {
+          "default": null,
+          "description": "image, svg: id of the asset to draw.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blend_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlendModeDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blur": {
+          "default": null,
+          "description": "Gaussian blur of the whole layer; standard deviation in pixels, like\nCSS `filter: blur()`.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "clip": {
+          "default": null,
+          "description": "group: clip children to `size`.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "color": {
+          "default": null,
+          "description": "solid: the colour.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "corner_radius": {
+          "default": null,
+          "description": "rect: corner radius in pixels. group: rounds the corners of `clip`.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "d": {
+          "default": null,
+          "description": "path: SVG path data, e.g. \"M0 0 L100 0 L50 80 Z\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_frame": {
+          "default": null,
+          "description": "Frame at which the layer stops existing (exclusive), in the parent's\nlocal time. Default: the end of the parent.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FillDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "rect, ellipse, path: interior paint — a colour string or a gradient."
+        },
+        "fill_rule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FillRuleDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "path: fill rule. Default nonzero."
+        },
+        "fit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FitDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "image, svg: how the asset fits `size`. Default contain."
+        },
+        "id": {
+          "description": "Unique across the whole template, including nested layers.",
+          "type": "string"
+        },
+        "layers": {
+          "description": "group: child layers, positioned and timed relative to the group.",
+          "items": {
+            "$ref": "#/$defs/Layer"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "opacity": {
+          "default": null,
+          "description": "0..1. Applies to the layer as a whole, like CSS `opacity`.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShadowDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Drop shadow following the layer's alpha, like CSS `drop-shadow()`."
+        },
+        "size": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SizeDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "rect, ellipse: required. image, svg, path, group: optional box."
+        },
+        "start_frame": {
+          "default": null,
+          "description": "First frame the layer exists, in its parent's local time. Default 0.\nThis is also the layer's local frame 0: its keyframes and children are\ntimed relative to it.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stroke": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StrokeDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "rect, ellipse, path: outline."
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "text: content and style."
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": {
+          "$ref": "#/$defs/LayerType"
+        },
+        "visible": {
+          "default": null,
+          "description": "`false` removes the layer (and its children) from the render.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "type": "object"
+    },
+    "LayerType": {
+      "oneOf": [
+        {
+          "const": "solid",
+          "description": "A rectangle the size of the composition. Needs `color`.",
+          "type": "string"
+        },
+        {
+          "const": "rect",
+          "description": "Rectangle, optionally rounded. Needs `size`.",
+          "type": "string"
+        },
+        {
+          "const": "ellipse",
+          "description": "Ellipse inscribed in `size`.",
+          "type": "string"
+        },
+        {
+          "const": "path",
+          "description": "Vector path from SVG path data in `d`.",
+          "type": "string"
+        },
+        {
+          "const": "text",
+          "description": "Typography. Needs `text`.",
+          "type": "string"
+        },
+        {
+          "const": "image",
+          "description": "Raster image. Needs `asset`.",
+          "type": "string"
+        },
+        {
+          "const": "svg",
+          "description": "Static SVG file. Needs `asset`.",
+          "type": "string"
+        },
+        {
+          "const": "group",
+          "description": "Container for child `layers`; also acts as a sequence (its\n`start_frame` shifts the children's time).",
+          "type": "string"
+        }
+      ]
+    },
+    "LineCapDef": {
+      "enum": [
+        "butt",
+        "round",
+        "square"
+      ],
+      "type": "string"
+    },
+    "LineJoinDef": {
+      "enum": [
+        "miter",
+        "round",
+        "bevel"
+      ],
+      "type": "string"
+    },
+    "PaddingAxes": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "format": "float",
+          "type": "number"
+        },
+        "y": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "PaddingDef": {
+      "anyOf": [
+        {
+          "format": "float",
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/PaddingAxes"
+        },
+        {
+          "$ref": "#/$defs/PaddingSides"
+        }
+      ]
+    },
+    "PaddingSides": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "default": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "left": {
+          "default": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "right": {
+          "default": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "top": {
+          "default": 0.0,
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "RevealDef": {
+      "additionalProperties": false,
+      "description": "Only the first `count` words (or characters) are painted in their real\ncolour; the rest use `hidden_color`. Animate `text.reveal` to move the\nboundary. Nothing shifts while text is revealed.",
+      "properties": {
+        "count": {
+          "description": "Units revealed. Fractions are rounded down.",
+          "format": "float",
+          "type": "number"
+        },
+        "hidden_color": {
+          "default": null,
+          "description": "Colour of the part not yet revealed. Default transparent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevealUnitDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Default word."
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "type": "object"
+    },
+    "RevealUnitDef": {
+      "enum": [
+        "word",
+        "char"
+      ],
+      "type": "string"
+    },
+    "ScaleDef": {
+      "anyOf": [
+        {
+          "format": "float",
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/Vec2"
+        }
+      ]
+    },
+    "ShadowDef": {
+      "additionalProperties": false,
+      "properties": {
+        "blur": {
+          "default": null,
+          "description": "Blur radius with CSS semantics (the Gaussian sigma is half of it).",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "color": {
+          "type": "string"
+        },
+        "x": {
+          "default": null,
+          "description": "Horizontal offset in pixels. Default 0.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "y": {
+          "default": null,
+          "description": "Vertical offset in pixels. Default 0.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "color"
+      ],
+      "type": "object"
+    },
+    "SizeDef": {
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "format": "float",
+          "type": "number"
+        },
+        "width": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "type": "object"
+    },
+    "SpanDef": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "end": {
+          "description": "Index one past the last character.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "description": "Index of the first character (0-based, counted in characters).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "color"
+      ],
+      "type": "object"
+    },
+    "SpringDef": {
+      "additionalProperties": false,
+      "properties": {
+        "damping": {
+          "default": null,
+          "description": "Default 10.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mass": {
+          "default": null,
+          "description": "Default 1.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stiffness": {
+          "default": null,
+          "description": "Default 100.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "StopDef": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "offset": {
+          "description": "0..1 along the gradient.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "offset",
+        "color"
+      ],
+      "type": "object"
+    },
+    "StrokeDef": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineCapDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color": {
+          "type": "string"
+        },
+        "join": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LineJoinDef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trim_end": {
+          "default": null,
+          "description": "End of the visible part of the outline, 0..1. Default 1. Animate it\nfrom 0 to 1 for a \"draw-on\" effect.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "trim_start": {
+          "default": null,
+          "description": "Start of the visible part of the outline, 0..1. Default 0.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "width": {
+          "description": "Line width in pixels, centred on the outline.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "color",
+        "width"
+      ],
+      "type": "object"
+    },
+    "TextAlignDef": {
+      "enum": [
+        "left",
+        "center",
+        "right",
+        "justify"
+      ],
+      "type": "string"
+    },
+    "TextBoxDef": {
+      "additionalProperties": false,
+      "properties": {
+        "border_color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "border_width": {
+          "default": null,
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "padding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PaddingDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Space between the text and the panel's edge: a number, `{x, y}` or\n`{left, top, right, bottom}`. It is part of the layer's box."
+        },
+        "radius": {
+          "default": null,
+          "description": "Corner radius. Default 0.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "TextDef": {
+      "additionalProperties": false,
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextAlignDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Default left. Centre/right align within `max_width` when it is set."
+        },
+        "background": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextBoxDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Panel behind the text (caption box, tag, stamp)."
+        },
+        "color": {
+          "default": null,
+          "description": "Default white.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_family": {
+          "$ref": "#/$defs/FontFamilyDef",
+          "description": "Family name of a font asset (or a system font), or a list with fallbacks."
+        },
+        "font_size": {
+          "description": "Pixels.",
+          "format": "float",
+          "type": "number"
+        },
+        "font_weight": {
+          "default": null,
+          "description": "100..900. Default 400.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "hug": {
+          "default": null,
+          "description": "Shrink the layer's box to the text when it fits within `max_width`\nwithout wrapping (text that wraps keeps the full `max_width`), like a\nCSS shrink-to-fit box. Use it with `background` so the panel hugs\nshort captions.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "italic": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "letter_spacing": {
+          "default": null,
+          "description": "Extra space between letters in pixels.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "line_height": {
+          "default": null,
+          "description": "Line height as a multiple of the font size (CSS unitless line-height).",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max_lines": {
+          "default": null,
+          "description": "Truncate with an ellipsis after this many lines.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_width": {
+          "default": null,
+          "description": "Wrap width in pixels. Without it the text only breaks at \"\\n\".",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "reveal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevealDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Show the text progressively: karaoke captions, typewriter."
+        },
+        "spans": {
+          "description": "Parts of the text in their own colour.",
+          "items": {
+            "$ref": "#/$defs/SpanDef"
+          },
+          "type": "array"
+        },
+        "value": {
+          "description": "The text. \"\\n\" starts a new line.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "font_family",
+        "font_size"
+      ],
+      "type": "object"
+    },
+    "TransformDef": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Point of the layer's own box that `position` refers to and that\nrotation/scale pivot around, as a fraction of the box: (0,0) top-left,\n(0.5,0.5) centre. Default (0, 0)."
+        },
+        "opacity": {
+          "default": null,
+          "description": "Same as the layer-level `opacity`.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the layer's anchor point sits, in the parent's pixels.\nDefault (0, 0)."
+        },
+        "rotation": {
+          "default": null,
+          "description": "Degrees, clockwise. Default 0.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleDef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A number (uniform) or `{ \"x\": 1, \"y\": 1 }`. Default 1."
+        }
+      },
+      "type": "object"
+    },
+    "Vec2": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "format": "float",
+          "type": "number"
+        },
+        "y": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A NOVA template: one composition, its assets and its layers.",
+  "properties": {
+    "assets": {
+      "description": "Images, SVGs and fonts referenced by layers.",
+      "items": {
+        "$ref": "#/$defs/AssetDef"
+      },
+      "type": "array"
+    },
+    "audio": {
+      "description": "Audio tracks mixed into the output video.",
+      "items": {
+        "$ref": "#/$defs/AudioDef"
+      },
+      "type": "array"
+    },
+    "composition": {
+      "$ref": "#/$defs/Composition"
+    },
+    "layers": {
+      "description": "Layers in paint order: the first is furthest back.",
+      "items": {
+        "$ref": "#/$defs/Layer"
+      },
+      "type": "array"
+    },
+    "metadata": {
+      "default": null,
+      "description": "Free-form data ignored by the renderer."
+    },
+    "schema_version": {
+      "description": "DSL version. This build understands \"1.0\".",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "composition",
+    "layers"
+  ],
+  "title": "Template",
+  "type": "object"
+}

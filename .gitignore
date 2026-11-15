@@ -1,0 +1,4 @@
+/target
+/.link-shim
+/out
+*.partial

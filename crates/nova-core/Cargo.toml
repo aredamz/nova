@@ -1,0 +1,12 @@
+[package]
+name = "nova-core"
+description = "NOVA core: time, colour, easing, keyframes, geometry, compiled scene and per-frame evaluation. No rendering backend."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

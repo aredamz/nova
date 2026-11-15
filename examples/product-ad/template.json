@@ -1,0 +1,676 @@
+{
+  "schema_version": "1.0",
+  "composition": {
+    "id": "product-ad",
+    "name": "Product advertisement",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "duration_frames": 450,
+    "background": "#0b1020"
+  },
+  "assets": [
+    {
+      "id": "regular",
+      "type": "font",
+      "src": "assets/NotoSans-Regular.ttf",
+      "family": "Noto Sans"
+    },
+    {
+      "id": "bold",
+      "type": "font",
+      "src": "assets/NotoSans-Bold.ttf",
+      "family": "Noto Sans"
+    },
+    {
+      "id": "product-photo",
+      "type": "image",
+      "src": "assets/product.jpg"
+    },
+    {
+      "id": "logo",
+      "type": "svg",
+      "src": "assets/logo.svg"
+    }
+  ],
+  "layers": [
+    {
+      "id": "backdrop",
+      "type": "rect",
+      "size": {
+        "width": 1920,
+        "height": 1080
+      },
+      "fill": {
+        "type": "linear",
+        "from": [
+          0,
+          0
+        ],
+        "to": [
+          1,
+          1
+        ],
+        "stops": [
+          {
+            "offset": 0,
+            "color": "#141a3a"
+          },
+          {
+            "offset": 1,
+            "color": "#0b1020"
+          }
+        ]
+      }
+    },
+    {
+      "id": "glow",
+      "type": "ellipse",
+      "size": {
+        "width": 900,
+        "height": 900
+      },
+      "fill": {
+        "type": "radial",
+        "stops": [
+          {
+            "offset": 0,
+            "color": "rgba(239,71,111,0.55)"
+          },
+          {
+            "offset": 1,
+            "color": "rgba(239,71,111,0)"
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 1350,
+          "y": 540
+        },
+        "anchor": {
+          "x": 0.5,
+          "y": 0.5
+        }
+      },
+      "animations": [
+        {
+          "property": "transform.position.x",
+          "keyframes": [
+            {
+              "frame": 0,
+              "value": 1250,
+              "easing": "ease_in_out_cubic"
+            },
+            {
+              "frame": 360,
+              "value": 1450
+            }
+          ]
+        },
+        {
+          "property": "transform.scale",
+          "keyframes": [
+            {
+              "frame": 0,
+              "value": 0.9,
+              "easing": "ease_in_out_cubic"
+            },
+            {
+              "frame": 360,
+              "value": 1.15
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "main",
+      "type": "group",
+      "start_frame": 0,
+      "end_frame": 372,
+      "animations": [
+        {
+          "property": "opacity",
+          "keyframes": [
+            {
+              "frame": 360,
+              "value": 1
+            },
+            {
+              "frame": 372,
+              "value": 0
+            }
+          ]
+        }
+      ],
+      "layers": [
+        {
+          "id": "logo-mark",
+          "type": "svg",
+          "asset": "logo",
+          "transform": {
+            "position": {
+              "x": 120,
+              "y": 96
+            }
+          },
+          "animations": [
+            {
+              "property": "opacity",
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0
+                },
+                {
+                  "frame": 10,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "photo-card",
+          "type": "group",
+          "size": {
+            "width": 760,
+            "height": 760
+          },
+          "transform": {
+            "position": {
+              "x": 1380,
+              "y": 540
+            },
+            "anchor": {
+              "x": 0.5,
+              "y": 0.5
+            }
+          },
+          "animations": [
+            {
+              "property": "transform.position.x",
+              "keyframes": [
+                {
+                  "frame": 4,
+                  "value": 2400,
+                  "easing": {
+                    "spring": {
+                      "stiffness": 60,
+                      "damping": 13
+                    }
+                  }
+                },
+                {
+                  "frame": 50,
+                  "value": 1380
+                }
+              ]
+            },
+            {
+              "property": "transform.rotation",
+              "keyframes": [
+                {
+                  "frame": 4,
+                  "value": 8,
+                  "easing": "ease_out_cubic"
+                },
+                {
+                  "frame": 44,
+                  "value": 0
+                }
+              ]
+            }
+          ],
+          "layers": [
+            {
+              "id": "photo-shadow",
+              "type": "rect",
+              "size": {
+                "width": 760,
+                "height": 760
+              },
+              "corner_radius": 48,
+              "fill": "#0b1020",
+              "shadow": {
+                "y": 30,
+                "blur": 80,
+                "color": "rgba(0,0,0,0.55)"
+              }
+            },
+            {
+              "id": "photo-frame",
+              "type": "group",
+              "size": {
+                "width": 760,
+                "height": 760
+              },
+              "clip": true,
+              "corner_radius": 48,
+              "layers": [
+                {
+                  "id": "photo",
+                  "type": "image",
+                  "asset": "product-photo",
+                  "size": {
+                    "width": 760,
+                    "height": 760
+                  },
+                  "fit": "cover",
+                  "transform": {
+                    "position": {
+                      "x": 380,
+                      "y": 380
+                    },
+                    "anchor": {
+                      "x": 0.5,
+                      "y": 0.5
+                    }
+                  },
+                  "animations": [
+                    {
+                      "property": "transform.scale",
+                      "keyframes": [
+                        {
+                          "frame": 0,
+                          "value": 1.0
+                        },
+                        {
+                          "frame": 372,
+                          "value": 1.12
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "headline",
+          "type": "text",
+          "transform": {
+            "position": {
+              "x": 120,
+              "y": 330
+            }
+          },
+          "text": {
+            "value": "{{product.name}}",
+            "font_family": "Noto Sans",
+            "font_size": 104,
+            "font_weight": 700,
+            "color": "#ffffff",
+            "line_height": 1.05,
+            "max_width": 820
+          },
+          "animations": [
+            {
+              "property": "transform.position.y",
+              "keyframes": [
+                {
+                  "frame": 10,
+                  "value": 420,
+                  "easing": "ease_out_cubic"
+                },
+                {
+                  "frame": 30,
+                  "value": 330
+                }
+              ]
+            },
+            {
+              "property": "opacity",
+              "keyframes": [
+                {
+                  "frame": 10,
+                  "value": 0
+                },
+                {
+                  "frame": 24,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "underline",
+          "type": "path",
+          "d": "M0 0 C120 -26 300 22 520 -4",
+          "stroke": {
+            "color": "{{accent}}",
+            "width": 10,
+            "cap": "round",
+            "trim_end": 0
+          },
+          "transform": {
+            "position": {
+              "x": 126,
+              "y": 600
+            }
+          },
+          "animations": [
+            {
+              "property": "stroke.trim_end",
+              "keyframes": [
+                {
+                  "frame": 34,
+                  "value": 0,
+                  "easing": "ease_in_out_cubic"
+                },
+                {
+                  "frame": 58,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tagline",
+          "type": "text",
+          "transform": {
+            "position": {
+              "x": 120,
+              "y": 640
+            }
+          },
+          "text": {
+            "value": "{{product.tagline}}",
+            "font_family": "Noto Sans",
+            "font_size": 44,
+            "color": "#c9d1ff"
+          },
+          "animations": [
+            {
+              "property": "transform.position.y",
+              "keyframes": [
+                {
+                  "frame": 40,
+                  "value": 680,
+                  "easing": "ease_out_cubic"
+                },
+                {
+                  "frame": 58,
+                  "value": 640
+                }
+              ]
+            },
+            {
+              "property": "opacity",
+              "keyframes": [
+                {
+                  "frame": 40,
+                  "value": 0
+                },
+                {
+                  "frame": 54,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "price-badge",
+          "type": "group",
+          "size": {
+            "width": 300,
+            "height": 110
+          },
+          "transform": {
+            "position": {
+              "x": 270,
+              "y": 835
+            },
+            "anchor": {
+              "x": 0.5,
+              "y": 0.5
+            }
+          },
+          "animations": [
+            {
+              "property": "transform.scale",
+              "keyframes": [
+                {
+                  "frame": 70,
+                  "value": 0,
+                  "easing": "spring"
+                },
+                {
+                  "frame": 100,
+                  "value": 1
+                }
+              ]
+            }
+          ],
+          "layers": [
+            {
+              "id": "price-bg",
+              "type": "rect",
+              "size": {
+                "width": 300,
+                "height": 110
+              },
+              "corner_radius": 55,
+              "fill": "{{accent}}"
+            },
+            {
+              "id": "price-text",
+              "type": "text",
+              "transform": {
+                "position": {
+                  "x": 150,
+                  "y": 55
+                },
+                "anchor": {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              },
+              "text": {
+                "value": "{{product.price}}",
+                "font_family": "Noto Sans",
+                "font_size": 52,
+                "font_weight": 700,
+                "color": "#14182b"
+              }
+            }
+          ]
+        },
+        {
+          "id": "cta",
+          "type": "group",
+          "start_frame": 150,
+          "size": {
+            "width": 420,
+            "height": 110
+          },
+          "transform": {
+            "position": {
+              "x": 660,
+              "y": 835
+            },
+            "anchor": {
+              "x": 0.5,
+              "y": 0.5
+            }
+          },
+          "animations": [
+            {
+              "property": "opacity",
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0
+                },
+                {
+                  "frame": 12,
+                  "value": 1
+                }
+              ]
+            },
+            {
+              "property": "transform.scale",
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 0.9,
+                  "easing": "ease_out_cubic"
+                },
+                {
+                  "frame": 14,
+                  "value": 1
+                }
+              ]
+            }
+          ],
+          "layers": [
+            {
+              "id": "cta-bg",
+              "type": "rect",
+              "size": {
+                "width": 420,
+                "height": 110
+              },
+              "corner_radius": 55,
+              "stroke": {
+                "color": "#ffffff",
+                "width": 4
+              }
+            },
+            {
+              "id": "cta-text",
+              "type": "text",
+              "transform": {
+                "position": {
+                  "x": 210,
+                  "y": 55
+                },
+                "anchor": {
+                  "x": 0.5,
+                  "y": 0.5
+                }
+              },
+              "text": {
+                "value": "{{cta}}",
+                "font_family": "Noto Sans",
+                "font_size": 44,
+                "font_weight": 700,
+                "color": "#ffffff"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "outro",
+      "type": "group",
+      "start_frame": 360,
+      "animations": [
+        {
+          "property": "opacity",
+          "keyframes": [
+            {
+              "frame": 0,
+              "value": 0
+            },
+            {
+              "frame": 14,
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "layers": [
+        {
+          "id": "outro-logo",
+          "type": "svg",
+          "asset": "logo",
+          "transform": {
+            "position": {
+              "x": 960,
+              "y": 450
+            },
+            "anchor": {
+              "x": 0.5,
+              "y": 0.5
+            },
+            "scale": 3
+          },
+          "animations": [
+            {
+              "property": "transform.scale",
+              "keyframes": [
+                {
+                  "frame": 0,
+                  "value": 1.6,
+                  "easing": "spring"
+                },
+                {
+                  "frame": 30,
+                  "value": 3
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "outro-brand",
+          "type": "text",
+          "transform": {
+            "position": {
+              "x": 960,
+              "y": 700
+            },
+            "anchor": {
+              "x": 0.5,
+              "y": 0.5
+            }
+          },
+          "text": {
+            "value": "{{brand}}",
+            "font_family": "Noto Sans",
+            "font_size": 96,
+            "font_weight": 700,
+            "letter_spacing": 24,
+            "color": "#ffffff"
+          },
+          "animations": [
+            {
+              "property": "text.letter_spacing",
+              "keyframes": [
+                {
+                  "frame": 6,
+                  "value": 60,
+                  "easing": "ease_out_cubic"
+                },
+                {
+                  "frame": 40,
+                  "value": 24
+                }
+              ]
+            },
+            {
+              "property": "opacity",
+              "keyframes": [
+                {
+                  "frame": 6,
+                  "value": 0
+                },
+                {
+                  "frame": 24,
+                  "value": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

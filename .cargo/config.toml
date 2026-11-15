@@ -1,0 +1,6 @@
+# Skia links against the system libfreetype / libfontconfig. On a machine with
+# the -dev packages installed (scripts/setup-ubuntu.sh) nothing here is needed.
+# Without root, scripts/dev-link-shim.sh creates .link-shim/ with the two
+# linker symlinks and this makes the linker look there.
+[env]
+LIBRARY_PATH = { value = ".link-shim", relative = true }

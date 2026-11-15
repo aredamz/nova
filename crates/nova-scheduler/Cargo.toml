@@ -1,0 +1,20 @@
+[package]
+name = "nova-scheduler"
+description = "NOVA render pipeline: bounded parallel frame rendering with ordered output."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nova-core.workspace = true
+nova-raster.workspace = true
+nova-encoder.workspace = true
+
+[dev-dependencies]
+nova-template.workspace = true
+serde_json.workspace = true
+tempfile = "3"
+
+[lints]
+workspace = true

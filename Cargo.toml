@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/nova-core",
+    "crates/nova-template",
+    "crates/nova-raster",
+    "crates/nova-encoder",
+    "crates/nova-scheduler",
+    "crates/nova-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.lints.clippy]
+# `chunks_exact(4)` over pixel buffers reads better than `as_chunks::<4>().0`.
+chunks_exact_to_as_chunks = "allow"
+
+[workspace.dependencies]
+nova-core = { path = "crates/nova-core" }
+nova-template = { path = "crates/nova-template" }
+nova-raster = { path = "crates/nova-raster" }
+nova-encoder = { path = "crates/nova-encoder" }
+nova-scheduler = { path = "crates/nova-scheduler" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+debug = false
+strip = "symbols"
+
+# Tests render real frames; unoptimised Rust-side pixel loops are too slow.
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "composition": {
+    "id": "shorts-demo",
+    "name": "Vertical short with captions",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "duration_frames": 300,
+    "background": "#0b1020"
+  },
+  "assets": [
+    { "id": "regular", "type": "font", "src": "shared/fonts/NotoSans-Regular.ttf", "family": "Noto Sans" },
+    { "id": "bold", "type": "font", "src": "shared/fonts/NotoSans-Bold.ttf", "family": "Noto Sans" },
+    { "id": "photo", "type": "image", "src": "product-ad/assets/product.jpg" }
+  ],
+  "layers": [
+    {
+      "id": "backdrop",
+      "type": "rect",
+      "size": { "width": 1080, "height": 1920 },
+      "fill": {
+        "type": "linear", "from": [0, 0], "to": [0, 1],
+        "stops": [ { "offset": 0, "color": "#1b1464" }, { "offset": 1, "color": "#0b1020" } ]
+      }
+    },
+    {
+      "id": "glow",
+      "type": "ellipse",
+      "size": { "width": 1100, "height": 1100 },
+      "fill": {
+        "type": "radial",
+        "stops": [ { "offset": 0, "color": "rgba(255,107,107,0.45)" }, { "offset": 1, "color": "rgba(255,107,107,0)" } ]
+      },
+      "transform": { "position": { "x": 540, "y": 700 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "animations": [
+        { "property": "transform.position.y", "keyframes": [ { "frame": 0, "value": 620, "easing": "ease_in_out_cubic" }, { "frame": 300, "value": 900 } ] }
+      ]
+    },
+    {
+      "id": "label",
+      "type": "group",
+      "size": { "width": 360, "height": 76 },
+      "transform": { "position": { "x": 540, "y": 210 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "animations": [
+        { "property": "transform.scale", "keyframes": [ { "frame": 2, "value": 0, "easing": "spring" }, { "frame": 30, "value": 1 } ] }
+      ],
+      "layers": [
+        { "id": "label-bg", "type": "rect", "size": { "width": 360, "height": 76 }, "corner_radius": 38, "fill": "#ffd166" },
+        {
+          "id": "label-text", "type": "text",
+          "transform": { "position": { "x": 180, "y": 38 }, "anchor": { "x": 0.5, "y": 0.5 } },
+          "text": { "value": "KISAH BENAR", "font_family": "Noto Sans", "font_size": 36, "font_weight": 700, "letter_spacing": 4, "color": "#1b1464" }
+        }
+      ]
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "transform": { "position": { "x": 540, "y": 430 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "shadow": { "y": 6, "blur": 24, "color": "rgba(0,0,0,0.45)" },
+      "text": {
+        "value": "Malam itu,\naku takkan lupa.",
+        "font_family": "Noto Sans", "font_size": 96, "font_weight": 700, "color": "#ffffff",
+        "align": "center", "line_height": 1.12
+      },
+      "animations": [
+        { "property": "opacity", "keyframes": [ { "frame": 10, "value": 0 }, { "frame": 26, "value": 1 } ] },
+        { "property": "transform.position.y", "keyframes": [ { "frame": 10, "value": 500, "easing": "ease_out_cubic" }, { "frame": 30, "value": 430 } ] }
+      ]
+    },
+    {
+      "id": "card",
+      "type": "group",
+      "size": { "width": 840, "height": 840 },
+      "transform": { "position": { "x": 540, "y": 1090 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "animations": [
+        { "property": "transform.position.y", "keyframes": [ { "frame": 24, "value": 2500, "easing": { "spring": { "stiffness": 70, "damping": 14 } } }, { "frame": 70, "value": 1090 } ] },
+        { "property": "transform.rotation", "keyframes": [ { "frame": 24, "value": -6, "easing": "ease_out_cubic" }, { "frame": 64, "value": 0 } ] }
+      ],
+      "layers": [
+        {
+          "id": "card-shadow", "type": "rect", "size": { "width": 840, "height": 840 }, "corner_radius": 56, "fill": "#0b1020",
+          "shadow": { "y": 30, "blur": 80, "color": "rgba(0,0,0,0.6)" }
+        },
+        {
+          "id": "card-frame", "type": "group", "size": { "width": 840, "height": 840 }, "clip": true, "corner_radius": 56,
+          "layers": [
+            {
+              "id": "card-photo", "type": "image", "asset": "photo", "size": { "width": 840, "height": 840 }, "fit": "cover",
+              "transform": { "position": { "x": 420, "y": 420 }, "anchor": { "x": 0.5, "y": 0.5 } },
+              "animations": [
+                { "property": "transform.scale", "keyframes": [ { "frame": 0, "value": 1.0 }, { "frame": 300, "value": 1.15 } ] }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cap-1", "type": "text", "start_frame": 40, "end_frame": 105,
+      "transform": { "position": { "x": 540, "y": 1700 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "shadow": { "y": 4, "blur": 14, "color": "rgba(0,0,0,0.9)" },
+      "text": { "value": "Pukul 4 pagi, aku terjaga.", "font_family": "Noto Sans", "font_size": 60, "font_weight": 700, "color": "#ffffff", "align": "center", "max_width": 940 },
+      "animations": [ { "property": "transform.scale", "keyframes": [ { "frame": 0, "value": 0.85, "easing": "spring" }, { "frame": 14, "value": 1 } ] } ]
+    },
+    {
+      "id": "cap-2", "type": "text", "start_frame": 105, "end_frame": 180,
+      "transform": { "position": { "x": 540, "y": 1700 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "shadow": { "y": 4, "blur": 14, "color": "rgba(0,0,0,0.9)" },
+      "text": { "value": "Dari arah padang, ada suara menjerit.", "font_family": "Noto Sans", "font_size": 60, "font_weight": 700, "color": "#ffffff", "align": "center", "max_width": 940 },
+      "animations": [ { "property": "transform.scale", "keyframes": [ { "frame": 0, "value": 0.85, "easing": "spring" }, { "frame": 14, "value": 1 } ] } ]
+    },
+    {
+      "id": "cap-3", "type": "text", "start_frame": 180, "end_frame": 250,
+      "transform": { "position": { "x": 540, "y": 1700 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "shadow": { "y": 4, "blur": 14, "color": "rgba(0,0,0,0.9)" },
+      "text": { "value": "Halus. Panjang.", "font_family": "Noto Sans", "font_size": 72, "font_weight": 700, "color": "#ff6b6b", "align": "center", "max_width": 940 },
+      "animations": [ { "property": "transform.scale", "keyframes": [ { "frame": 0, "value": 0.85, "easing": "spring" }, { "frame": 14, "value": 1 } ] } ]
+    },
+    {
+      "id": "cap-4", "type": "text", "start_frame": 250, "end_frame": 300,
+      "transform": { "position": { "x": 540, "y": 1700 }, "anchor": { "x": 0.5, "y": 0.5 } },
+      "shadow": { "y": 4, "blur": 14, "color": "rgba(0,0,0,0.9)" },
+      "text": { "value": "Badan aku kaku.", "font_family": "Noto Sans", "font_size": 72, "font_weight": 700, "color": "#ffffff", "align": "center", "max_width": 940 },
+      "animations": [ { "property": "transform.scale", "keyframes": [ { "frame": 0, "value": 0.85, "easing": "spring" }, { "frame": 14, "value": 1 } ] } ]
+    },
+    {
+      "id": "progress",
+      "type": "rect",
+      "size": { "width": 4, "height": 10 },
+      "fill": "#ffd166",
+      "transform": { "position": { "x": 0, "y": 1910 } },
+      "animations": [ { "property": "size.width", "keyframes": [ { "frame": 0, "value": 4 }, { "frame": 300, "value": 1080 } ] } ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+[package]
+name = "nova-cli"
+description = "NOVA command line: validate, inspect, preview, render, benchmark, doctor."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "nova"
+path = "src/main.rs"
+
+[dependencies]
+nova-core.workspace = true
+nova-template.workspace = true
+nova-raster.workspace = true
+nova-encoder.workspace = true
+nova-scheduler.workspace = true
+serde_json.workspace = true
+clap = { version = "4.6.7", features = ["derive"] }
+ctrlc = "3.5.2"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

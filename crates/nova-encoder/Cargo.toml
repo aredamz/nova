@@ -1,0 +1,17 @@
+[package]
+name = "nova-encoder"
+description = "NOVA output stage: colour conversion and the FFmpeg encoder process."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+nova-core.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
