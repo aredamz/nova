@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86-64
+            os: ubuntu-24.04
+            setup: scripts/setup-ubuntu.sh
+          - name: macOS Apple Silicon
+            os: macos-14
+            setup: scripts/setup-macos.sh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ matrix.os }}-${{ hashFiles('Cargo.lock') }}
+
+      # Liberation fonts stand in for Arial and Times New Roman, as in Chrome on Linux.
+      - name: Fonts for the bake tests (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y fonts-liberation
+
+      # The documented installation path: system packages, Rust, release build, `nova doctor`.
+      - name: Install and build
+        run: |
+          rustup update stable --no-self-update && rustup default stable
+          ${{ matrix.setup }} 2>&1 | tee -a ci.log
+
+      - name: Rust tests
+        run: cargo test --workspace --release 2>&1 | tee -a ci.log
+
+      - name: Render the template examples
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          mkdir -p out
+          {
+            nova validate examples/product-ad/template.json --data examples/product-ad/data.json
+            nova render examples/product-ad/template.json --data examples/product-ad/data.json -o out/product-ad.mp4
+            nova render examples/shorts/template.json --assets-root examples -o out/shorts.mp4
+            nova sheet examples/shorts/template.json --assets-root examples --count 8 --columns 4 -o out/shorts-sheet.png
+          } 2>&1 | tee -a ci.log
+
+      - name: Bake tools - tests
+        run: |
+          (cd tools/remotion-bake && npm install && npm test) 2>&1 | tee -a ci.log
+
+      - name: Bake tools - render the Remotion example
+        run: |
+          (cd examples/remotion-bake && npm install) 2>&1 | tee -a ci.log
+          {
+            node tools/remotion-bake/render.mjs --project examples/remotion-bake \
+              --target examples/remotion-bake/target.ts --fonts examples/shared/fonts --out out/hello.mp4
+            node tools/remotion-bake/render.mjs --project examples/remotion-bake \
+              --target examples/remotion-bake/target.ts --fonts examples/shared/fonts --out out/hello-2x.mp4 \
+              --quality ultra1080 --clean
+          } 2>&1 | tee -a ci.log
+
+      # Puts the relevant lines of a failing run into an annotation, readable without opening the log.
+      - name: Summarise the failure
+        if: failure()
+        run: |
+          {
+            grep -nE "panicked|FAILED|^error|error:|differ|not ok|✖|failed|cannot|No such" ci.log | tail -n 30 || true
+            echo "---- last lines ----"
+            tail -n 30 ci.log || true
+          } > summary.txt
+          message=$(sed -e 's/%/%25/g' summary.txt | awk '{ printf "%s%%0A", $0 }')
+          echo "::error title=${{ matrix.name }}::${message}"

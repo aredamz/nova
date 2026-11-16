@@ -16,8 +16,17 @@ fn read(path: &str) -> Option<String> {
     std::fs::read_to_string(path).ok()
 }
 
+/// Value of a `sysctl` key, for systems without `/proc` (macOS).
+fn sysctl(key: &str) -> Option<String> {
+    let out = Command::new("sysctl").args(["-n", key]).output().ok()?;
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (out.status.success() && !value.is_empty()).then_some(value)
+}
+
 fn cpu_model() -> Option<String> {
-    let info = read("/proc/cpuinfo")?;
+    let Some(info) = read("/proc/cpuinfo") else {
+        return sysctl("machdep.cpu.brand_string");
+    };
     let line = info.lines().find(|l| l.starts_with("model name"))?;
     Some(line.split(':').nth(1)?.trim().to_owned())
 }
@@ -124,7 +133,7 @@ pub fn cmd_doctor(json: bool) -> Result<(), Failure> {
     let ffprobe = first_line("ffprobe", "-version");
     let x264 = ffmpeg.is_some() && has_encoder("libx264");
     let fonts = nova_raster::sheet::system_font_family_count();
-    let mem_total = meminfo("MemTotal:");
+    let mem_total = meminfo("MemTotal:").or_else(|| sysctl("hw.memsize")?.parse().ok());
     let mem_available = meminfo("MemAvailable:");
     let mem_limit = memory_limit();
     let tmp_ok = temp_writable();

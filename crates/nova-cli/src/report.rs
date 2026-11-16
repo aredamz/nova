@@ -94,7 +94,8 @@ pub fn errors_json(errors: &[Error]) -> Value {
     )
 }
 
-/// Peak resident memory of this process (Linux), in bytes.
+/// Peak resident memory of this process, in bytes. Read from `/proc`, so it
+/// is known on Linux only; elsewhere the report says "unknown".
 pub fn peak_rss_bytes() -> Option<u64> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
     let line = status.lines().find(|l| l.starts_with("VmHWM:"))?;
