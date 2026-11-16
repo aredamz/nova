@@ -12,6 +12,8 @@ import { audioCues } from "./audio.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const fonts = loadFonts(path.join(HERE, "tiada-folder")); // fon sistem sahaja
+// Aturan fon sistem meniru Chrome di Linux (Arial -> Liberation Sans); di sistem lain fon yang dipasang berbeza.
+const LINUX_FONTS = { skip: process.platform !== "linux" && "aturan fon sistem diuji di Linux sahaja" };
 const svgOf = (html, warnings = []) => {
   const ops = convert(`<div style="position:absolute;top:0;left:0;width:1080px;height:1920px">${html}</div>`, { W: 1080, H: 1920, fonts, warn: (m) => warnings.push(m) });
   return ops.filter((o) => o.t === "svg").map((o) => o.d).join("");
@@ -108,7 +110,7 @@ test("box-shadow dengan spread melukis gelang di sekeliling kotak", () => {
   assert.match(svg, /<rect x="294" y="94" width="192" height="332" rx="20" ry="20" fill="rgb\(255,255,255\)" fill-opacity="0.9"\/><rect x="300" y="100" width="180" height="320" rx="14" ry="14"/);
 });
 
-test("aksara yang tiada dalam fon diukur dengan fon sandaran", () => {
+test("aksara yang tiada dalam fon diukur dengan fon sandaran", LINUX_FONTS, () => {
   const font = fonts.pick("Arial, sans-serif", 400);
   const plain = fonts.advance(font, "REC", 100);
   assert.equal(plain, font.getAdvanceWidth("REC", 100));
@@ -116,7 +118,7 @@ test("aksara yang tiada dalam fon diukur dengan fon sandaran", () => {
   if (font.charToGlyphIndex("✓") === 0) assert.notEqual(fonts.advance(font, "✓", 100), font.getAdvanceWidth("✓", 100));
 });
 
-test("hanya aksara yang tiada bertukar fon; selebihnya kekal", () => {
+test("hanya aksara yang tiada bertukar fon; selebihnya kekal", LINUX_FONTS, () => {
   const svg = svgOf(`<div style="position:absolute;left:10px;top:6px;font-family:Arial, sans-serif;font-size:40px;color:#f00">✓ REC</div>`);
   const spans = [...svg.matchAll(/<tspan x="([\d.]+)" font-family="([^"]+)"[^>]*>([^<]*)<\/tspan>/g)].map((m) => [m[2], m[3], +m[1]]);
   assert.equal(spans.length, 2, svg);

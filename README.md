@@ -1,5 +1,7 @@
 # NOVA
 
+[![CI](https://github.com/aredamz/nova/actions/workflows/ci.yml/badge.svg)](https://github.com/aredamz/nova/actions/workflows/ci.yml)
+
 NOVA is a **2D** video render engine for motion graphics. It takes a JSON template and
 produces an MP4 file. It is written in Rust and runs entirely on the CPU; it requires
 neither a GPU nor a browser.
@@ -112,7 +114,9 @@ are available through the `frames` layer rather than through ordinary template l
 
 ### Requirements
 
-- Linux on x86-64. Development and testing were carried out on Ubuntu.
+- Linux on x86-64, or macOS on Apple Silicon. Both are built and tested by the CI
+  workflow on every push; development is carried out on Ubuntu. See
+  [Platform notes](#platform-notes).
 - A Rust toolchain (stable) to build the engine.
 - FFmpeg with libx264, and `ffprobe`.
 - The FreeType and Fontconfig libraries.
@@ -130,7 +134,20 @@ The script installs the system packages (`ffmpeg`, `libfontconfig1-dev`,
 `libfreetype-dev`), installs Rust if it is missing, runs `cargo build --release` and
 finishes with `nova doctor`.
 
-### Without sudo
+### macOS (Apple Silicon)
+
+Requires [Homebrew](https://brew.sh):
+
+```bash
+git clone https://github.com/aredamz/nova.git
+cd nova
+scripts/setup-macos.sh
+```
+
+The script installs `ffmpeg` and `fontconfig` with Homebrew, installs Rust if it is
+missing, runs `cargo build --release` and finishes with `nova doctor`.
+
+### Linux without sudo
 
 On a machine that already provides `ffmpeg`, `libfreetype6` and `libfontconfig1`:
 
@@ -152,6 +169,19 @@ nova doctor
 The first build downloads a prebuilt Skia library, so no C++ compilation takes place. If
 no prebuilt binary exists for the target, `skia-bindings` attempts to build Skia from
 source, which requires clang, Python and ninja and takes considerably longer.
+
+### Platform notes
+
+- **Text rendering.** Skia rasterises glyphs with FreeType on Linux and with CoreText on
+  macOS, so the edges of text differ slightly between the two systems. Output is
+  deterministic on a given platform, but not pixel-identical across platforms.
+- **Colour conversion.** The RGBA to I420 conversion has an AVX2 implementation for
+  x86-64; other processors, including Apple Silicon, use the portable implementation.
+- **`nova doctor` and reports.** CPU quota, steal time and peak memory are read from
+  Linux interfaces and are reported as unknown on macOS.
+- **Remotion bake and system fonts.** When a composition names a font that is not
+  supplied with `--fonts`, the bake tools look it up through fontconfig using the rules of
+  Chrome on Linux. On macOS, supply every font the composition uses with `--fonts`.
 
 ## Quick start
 
@@ -327,7 +357,7 @@ tools/remotion-bake/  bake a Remotion composition into a frame pack and mix its 
 examples/           example templates and the Remotion bake example; see examples/README.md
 benchmarks/         benchmark workload generator
 schemas/            JSON Schema of the template format
-scripts/            setup and benchmark scripts
+scripts/            setup scripts (Ubuntu, macOS) and benchmark scripts
 docs/               template format, frame bake, design notes and performance
 ```
 
@@ -342,7 +372,9 @@ cargo clippy --workspace --all-targets
 NOVA_UPDATE_GOLDEN=1 cargo test -p nova-raster --test golden   # regenerate; review every PNG that changes
 ```
 
-Tests that require FFmpeg are skipped when it is not installed.
+Tests that require FFmpeg are skipped when it is not installed. The CI workflow
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the setup script, both test
+suites and the example renders on Ubuntu and on macOS (Apple Silicon).
 
 ## Troubleshooting
 

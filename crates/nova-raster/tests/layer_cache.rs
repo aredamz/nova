@@ -108,8 +108,11 @@ fn caching_does_not_change_the_picture() {
         // colours, and nothing may differ by more than that.
         assert!(worst <= 2, "frame {f}: a channel differs by {worst}");
         assert!(mean_abs < 0.08, "frame {f}: mean difference {mean_abs:.4}");
+        // On x86-64 the shift stays under 0.02 of one step. Skia's NEON code
+        // rounds the layer composite differently: 0.031 on Apple Silicon.
+        let max_shift = if cfg!(target_arch = "x86_64") { 0.02 } else { 0.05 };
         assert!(
-            mean_signed.abs() < 0.02,
+            mean_signed.abs() < max_shift,
             "frame {f}: colours shifted by {mean_signed:.4}"
         );
     }
