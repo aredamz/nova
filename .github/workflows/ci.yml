@@ -26,7 +26,7 @@ jobs:
             os: ubuntu-24.04
             setup: scripts/setup-ubuntu.sh
           - name: macOS Apple Silicon
-            os: macos-14
+            os: macos-latest
             setup: scripts/setup-macos.sh
     steps:
       - uses: actions/checkout@v4
