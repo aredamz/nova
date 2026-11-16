@@ -55,7 +55,7 @@ jobs:
           ${{ matrix.setup }} 2>&1 | tee -a ci.log
 
       - name: Rust tests
-        run: cargo test --workspace --release 2>&1 | tee -a ci.log
+        run: cargo test --workspace --release --no-fail-fast 2>&1 | tee -a ci.log
 
       - name: Render the template examples
         run: |

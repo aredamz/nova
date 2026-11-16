@@ -19,6 +19,11 @@ fn golden_dir() -> PathBuf {
 /// so on one platform the match is exact; the slack is for other CPUs, where
 /// SIMD code paths may round a few antialiased edge pixels differently.
 const MAX_BAD_PIXEL_FRACTION: f64 = 0.002;
+/// The reference images were made on Linux, where Skia rasterises glyphs with
+/// FreeType. On other systems the platform rasteriser (CoreText on macOS)
+/// antialiases glyph edges differently: under 1% of the pixels in the images
+/// with the most text. A layout or drawing error moves far more than this.
+const MAX_BAD_PIXEL_FRACTION_OTHER_OS: f64 = 0.02;
 const CHANNEL_TOLERANCE: u8 = 12;
 
 fn check(name: &str, root: &Path, template: &Value, frame: u32) {
@@ -50,7 +55,12 @@ fn check(name: &str, root: &Path, template: &Value, frame: u32) {
         }
     }
     let fraction = bad as f64 / (w as f64 * h as f64);
-    if fraction > MAX_BAD_PIXEL_FRACTION {
+    let allowed = if cfg!(target_os = "linux") {
+        MAX_BAD_PIXEL_FRACTION
+    } else {
+        MAX_BAD_PIXEL_FRACTION_OTHER_OS
+    };
+    if fraction > allowed {
         let failed = golden_dir().join(format!("{name}.actual.png"));
         nova_raster::png::write_png(&failed, &actual, w, h).unwrap();
         panic!(
