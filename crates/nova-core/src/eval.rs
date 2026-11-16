@@ -98,6 +98,10 @@ pub enum EvalKind {
         reveal: Option<u32>,
     },
     Image,
+    /// Baked frame to draw, as its content id in the pack.
+    Frames {
+        content: u32,
+    },
     Group {
         children: Vec<EvalNode>,
     },
@@ -230,6 +234,13 @@ impl Scene {
                 }
             }
             NodeKind::Image { .. } => EvalKind::Image,
+            NodeKind::Frames { asset, frames, .. } => {
+                let pack = self.asset(*asset).pack.as_ref()?;
+                let local = (frame - node.origin).clamp(0, (*frames as i64 - 1).max(0)) as usize;
+                EvalKind::Frames {
+                    content: pack.index.get(local)?.content,
+                }
+            }
             NodeKind::Group { children, .. } => {
                 let children: Vec<EvalNode> = children
                     .iter()

@@ -36,7 +36,7 @@ pub struct PipelineArgs {
 /// Encoder settings shared by `render` and `benchmark`.
 #[derive(Args, Clone)]
 pub struct EncodeArgs {
-    /// Encoding profile: preview, balanced or high_quality
+    /// Encoding profile: preview, balanced, high_quality or master
     #[arg(long, default_value = "balanced")]
     pub profile: String,
     /// Override the profile's x264 preset (ultrafast … veryslow)
@@ -45,6 +45,9 @@ pub struct EncodeArgs {
     /// Override the profile's CRF (lower = better quality, bigger file)
     #[arg(long, value_parser = clap::value_parser!(u8).range(0..=51))]
     pub crf: Option<u8>,
+    /// Override the profile's x264 tune (film, animation, grain, …; `none` for no tune)
+    #[arg(long)]
+    pub tune: Option<String>,
     /// x264 threads [default: chosen by x264]
     #[arg(long, value_name = "N")]
     pub encoder_threads: Option<u32>,
@@ -88,6 +91,21 @@ impl EncodeArgs {
         if let Some(crf) = self.crf {
             profile.crf = crf;
         }
+        if let Some(t) = &self.tune {
+            if t == "none" {
+                profile.tune = None;
+            } else if EncodeProfile::TUNES.contains(&t.as_str()) {
+                profile.tune = Some(t.clone());
+            } else {
+                return Err(Failure::one(Error::new(
+                    ErrorCode::Validation,
+                    format!(
+                        "unknown x264 tune `{t}`; choose one of: none, {}",
+                        EncodeProfile::TUNES.join(", ")
+                    ),
+                )));
+            }
+        }
         Ok(profile)
     }
 }
@@ -115,6 +133,17 @@ pub struct RenderArgs {
     /// Leave the template's audio tracks out of the file
     #[arg(long)]
     pub no_audio: bool,
+    /// Also write this file from the same frames, resized to the template's own size
+    /// (with `--scale 2`: a 4K master in --output and a 1080p file here, in one run)
+    #[arg(long, value_name = "FILE")]
+    pub also: Option<PathBuf>,
+    /// Height of the --also file [default: the template's height]; the width follows
+    #[arg(long, value_name = "PIXELS", requires = "also")]
+    pub also_height: Option<u32>,
+    /// Encode --output at the template's own size: with `--scale 2` every frame is drawn
+    /// at twice the size and reduced (supersampling), and only that one file is written
+    #[arg(long, conflicts_with = "also")]
+    pub supersample: bool,
     /// Print the job report as JSON on stdout
     #[arg(long)]
     pub json: bool,
@@ -226,6 +255,10 @@ pub fn stats_json(s: &RenderStats) -> Value {
             "offscreen_layers": s.renderer.offscreen_layers,
             "layer_cache_hits": s.renderer.layer_cache_hits,
             "layer_cache_misses": s.renderer.layer_cache_misses,
+            "baked_frames": s.renderer.baked_frames,
+            "baked_read_ms": s.renderer.baked_read_us as f64 / 1000.0,
+            "baked_parse_ms": s.renderer.baked_parse_us as f64 / 1000.0,
+            "baked_raster_ms": s.renderer.baked_raster_us as f64 / 1000.0,
         },
     })
 }
@@ -252,6 +285,8 @@ pub fn encoder_config(
         } else {
             Vec::new()
         },
+        extra: Vec::new(),
+        resize: None,
     }
 }
 
@@ -265,6 +300,7 @@ fn run_render(args: RenderArgs) -> Result<(), Failure> {
     let profile = args.encode.profile()?;
     let Loaded {
         scene,
+        template_size,
         backend,
         warnings,
         compile_ms,
@@ -304,6 +340,48 @@ fn run_render(args: RenderArgs) -> Result<(), Failure> {
         args.encode.encoder_threads,
         with_audio,
     );
+    let mut config = config;
+    if let Some(also) = &args.also {
+        let height = args.also_height.unwrap_or(template_size.1);
+        let even = |v: f64| {
+            let x = v.round().max(2.0) as u32;
+            x + (x & 1)
+        };
+        let height = even(height as f64);
+        let width = even(height as f64 * scene.width as f64 / scene.height as f64);
+        if (width, height) == (scene.width, scene.height) {
+            return Err(Failure::one(Error::new(
+                ErrorCode::Validation,
+                format!(
+                    "--also would be the same size as --output ({width}x{height}); \
+                     use it with --scale or give --also-height"
+                ),
+            )));
+        }
+        config.extra.push(nova_encoder::ScaledOutput {
+            output: also.clone(),
+            width,
+            height,
+            profile: profile.clone(),
+        });
+    }
+    if args.supersample {
+        let even = |v: u32| v.max(2) + (v & 1);
+        let size = (even(template_size.0), even(template_size.1));
+        if size.0 >= scene.width || size.1 >= scene.height {
+            return Err(Failure::one(Error::new(
+                ErrorCode::Validation,
+                format!(
+                    "--supersample draws larger than the template and reduces; \
+                     give --scale above 1 (frames are {}x{}, the template is {}x{})",
+                    scene.width, scene.height, size.0, size.1
+                ),
+            )));
+        }
+        config.resize = Some(size);
+    }
+    let output_size = config.resize.unwrap_or((scene.width, scene.height));
+    let also_size = config.extra.first().map(|e| (e.width, e.height));
     let cancel = install_cancel_handler();
 
     let mut sink = FfmpegSink::start(config)?;
@@ -339,6 +417,7 @@ fn run_render(args: RenderArgs) -> Result<(), Failure> {
         let report = json!({
             "ok": true,
             "output": args.output,
+            "output_size": { "width": output_size.0, "height": output_size.1 },
             "backend": backend.name(),
             "composition": { "id": scene.id, "width": scene.width, "height": scene.height, "fps": scene.fps.as_f64() },
             "frames": frames,
@@ -349,9 +428,13 @@ fn run_render(args: RenderArgs) -> Result<(), Failure> {
             "prepare_ms": r3(prepare.prepare_ms),
             "render": stats_json(&stats),
             "encode": {
-                "profile": profile.name, "preset": profile.preset, "crf": profile.crf,
+                "profile": profile.name, "preset": profile.preset, "crf": profile.crf, "tune": profile.tune,
                 "pipe_write_ms": r3(encode.pipe_write_ms), "total_ms": r3(encode.total_ms),
                 "output_bytes": encode.output_bytes, "command": encode.command,
+                "also": args.also.as_ref().zip(also_size).map(|(path, (w, h))| json!({
+                    "output": path, "width": w, "height": h,
+                    "output_bytes": encode.extra_bytes.first(),
+                })),
             },
             "audio_tracks": if with_audio { scene.audio.len() } else { 0 },
             "decoded_asset_bytes": prepare.decoded_bytes,
@@ -402,9 +485,15 @@ fn run_render(args: RenderArgs) -> Result<(), Failure> {
         stats.sink_ms / 1000.0
     );
     println!(
-        "  x264 {} crf {}{}; peak memory {}",
+        "  x264 {} crf {}{}{}{}; peak memory {}",
         profile.preset,
         profile.crf,
+        profile.tune.as_ref().map(|t| format!(" tune {t}")).unwrap_or_default(),
+        if args.supersample {
+            format!(", reduced to {}x{}", output_size.0, output_size.1)
+        } else {
+            String::new()
+        },
         if with_audio {
             format!(", {} audio track(s)", scene.audio.len())
         } else {

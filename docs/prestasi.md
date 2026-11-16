@@ -7,8 +7,9 @@ ukuran: 15 November 2026.
 Dua perkara **belum** diukur, jadi tiada dakwaan mengenainya:
 
 - **VPS sasaran (16 vCPU).** Jalankan `scripts/run-benchmarks.sh` di sana.
-- **Perbandingan dengan Remotion.** Belum ada composition 2D yang sama dalam kedua-dua
-  enjin. Lihat `docs/keputusan.md`.
+- **Perbandingan dengan Remotion untuk templat.** Belum ada composition 2D yang sama
+  ditulis dalam kedua-dua enjin. Yang ada ialah perbandingan untuk laluan frame bake
+  (kod Remotion yang sama, dilukis oleh NOVA), di [hujung dokumen ini](#frame-bake-satu-episod-penuh).
 
 ## Job rujukan: video 4 minit
 
@@ -149,3 +150,106 @@ Belum dilaksanakan, disenaraikan mengikut jangkaan pulangan:
    teras lebih banyak daripada yang x264 boleh gunakan dengan cekap; tiada faedah pada
    mesin 4 teras ini kerana CPU sudah penuh.
 2. **Agihan thread automatik** antara render dan x264 berdasarkan sisi yang menunggu.
+
+## Frame bake: satu episod penuh
+
+Diukur 16 November 2026 pada mesin lain daripada bahagian di atas: Intel Xeon Gold 6252
+2.1 GHz, 16 vCPU, 28 GiB RAM, tanpa GPU. Video: satu episod animasi 1080×1920, 30 fps,
+7,504 frame (4 min 10 s), ±1,500–2,000 elemen SVG sebingkai (rig watak prosedur, set 3D
+perisian, lorekan cel melalui `clipPath`, filter CSS per watak, grain shader). Kod
+sumbernya komposisi Remotion; lihat [`bake-remotion.md`](bake-remotion.md).
+
+| Laluan | Masa | Nota |
+|---|---:|---|
+| Remotion (Chromium, `REMOTION_GL=swangle`, concurrency 3) | **±101 min** | daripada rekod render asal episod itu; tidak diukur semula di sini |
+| NOVA: bundel | 0.4 s | esbuild |
+| NOVA: bake (14 proses) | 74.8 s | 100.9 frame/s; pek 1.55 GB |
+| NOVA: render (16 thread, x264 `medium`, CRF 18) | 316.3 s | 23.7 frame/s |
+| **NOVA: jumlah, dari kod sumber ke MP4** | **6 min 32 s** | ±15× lebih laju; RAM puncak 1.27 GiB |
+
+Setiap frame dalam render: 406 ms raster, 24 ms hurai SVG, 4.6 ms baca dan nyahmampat
+(purata sethread, dengan 16 thread berjalan). Yang mengehadkan ialah raster, bukan encoder:
+penulis menunggu frame, dan x264 hanya memakai 51 s.
+
+Ke mana 406 ms itu pergi, pada satu frame biasa dalam babak dalaman (1,222 isian, 334
+strok): isian ±120 ms, strok ±70 ms, lapisan filter ±75 ms, satu blur halus selebar
+skrin ±37 ms, lapisan `opacity` kumpulan ±24 ms.
+
+**Ketepatan.** MP4 NOVA dibanding dengan MP4 Remotion, kesemua 7,504 frame (kedua-duanya
+sudah dimampat x264, dan grain ada pada kedua-duanya):
+
+| | Purata | Median | Terendah |
+|---|---:|---:|---:|
+| PSNR | 35.7 dB | 35.1 dB | 27.9 dB |
+| SSIM | 0.971 | 0.971 | 0.931 |
+
+Frame terendah ialah close-up dengan zum kamera tinggi (anjakan beberapa piksel) dan
+babak hujan (garis halus yang rawak terhadap pemampatan); tiada elemen yang hilang atau
+salah lukis ditemui pada semakan visual 60+ frame merentas semua babak.
+
+**Episod kedua, dengan audio.** Episod lain daripada siri yang sama, lebih berat: 7,247 frame
+(4 min 2 s), ±25,000 elemen SVG sebingkai pada babak luar (pokok berakar gantung: 15,000 elips,
+10,000 path), 262 kiu audio daripada 99 fail. Diukur hujung ke hujung termasuk campuran audio dan
+master −14 LUFS:
+
+| Laluan | Masa | Nota |
+|---|---:|---|
+| Remotion (Chromium, `REMOTION_GL=swangle`, concurrency 3) | **±76 min** | daripada rekod render asal; termasuk audio |
+| NOVA: bundel | 0.5 s | |
+| NOVA: bake (14 proses) | 56.5 s | 128 frame/s; pek 1.6 GB |
+| NOVA: campur audio + master | 30.9 s | campur sahaja ±5 s; selebihnya `loudnorm` dan semakan puncak |
+| NOVA: render (16 thread, x264 `medium`, CRF 18) | 380.3 s | 19.2 frame/s |
+| **NOVA: jumlah, dari kod sumber ke MP4** | **7 min 48 s** | ±10× lebih laju; RAM puncak 1.5 GiB |
+
+(Dua larian berturut-turut: 468.7 s dan 468.1 s. Episod pertama di atas, diulang dengan campuran
+audio: 7 min 27 s.)
+
+Ketepatan episod ini, kesemua 7,247 frame: PSNR purata 36.2 dB (median 35.6, terendah 27.6),
+SSIM purata 0.972 (terendah 0.928). Audio berbanding MP4 Remotion: kelantangan −14.4 LUFS lawan
+−14.5, beza aras median 0.07 dB, anjakan masa 0 ms.
+
+Dua perkara yang ditemui oleh episod ini, kedua-duanya dalam bake:
+
+- `@remotion/noise` hanya menyimpan 10 seed. Episod ini memakai ±13,000 seed sebingkai, jadi
+  jadual hingar dibina semula pada hampir setiap panggilan: React sahaja ±2 s sebingkai, 65% di
+  dalam `createNoise2D`. Bundel bake membesarkan cache itu (nilai yang sama): ±0.35 s sebingkai.
+- Pembahagian frame yang tetap antara pekerja membuat satu pekerja ketinggalan pada babak berat
+  (12 minit lawan 1–3 minit yang lain). Kerja kini diagih atas permintaan dalam julat 24 frame.
+
+**Master 4K (`--scale 2 --profile master --also`).** Episod kedua yang sama, satu larian yang
+menulis master 2160×3840 dan fail 1080p daripada frame yang sama. Diukur semasa mesin turut
+menjalankan kerja lain yang berat (purata beban 50 pada 16 vCPU), jadi masa ini had atas:
+
+| | Masa / saiz |
+|---|---:|
+| Bake + audio | 68 s + 34 s |
+| Render 4K + dua pengekodan | 30 min 35 s (4.0 frame/s) |
+| **Jumlah** | **32 min 17 s**; RAM puncak 5.0 GiB (termasuk x264) |
+| Master 4K | 1.73 GB (57 Mbps) |
+| Fail 1080p | 364 MB (12 Mbps) |
+
+Satu frame 4K mengambil ±3.3× masa raster frame 1080p (bukan 4×: kerja laluan tidak
+bergantung pada piksel). Berapa dekat setiap fail dengan frame yang dilukis, pada segmen 8 saat
+yang sama (frame rujukan disimpan tanpa kehilangan):
+
+| Fail | Lawan frame 1080p asal | Lawan frame 4K asal |
+|---|---:|---:|
+| 1080p, `balanced` (medium, CRF 18) | 43.5 dB / SSIM 0.972 | 38.9 dB / 0.967 (dibesarkan) |
+| 1080p daripada larian 4K, `master` | 42.3 dB / 0.972 * | 39.7 dB / 0.970 (dibesarkan) |
+| 4K, `master` | | **48.0 dB / 0.989** |
+
+\* Fail ini bukan salinan frame 1080p: ia frame 4K yang disampel turun, jadi tepinya berbeza
+(anti-alias lebih halus) dan PSNR terhadap render 1080p terus sedikit lebih rendah.
+
+Master 4K 9 dB lebih dekat dengan imej yang dilukis berbanding fail 1080p biasa (ralat kuasa
+±8× lebih kecil), dengan empat kali piksel. Fail 1080p hanya bertambah baik sedikit; yang
+besar ialah 4K. Kandungan disahkan sama pada kesemua 7,247 frame (fail 1080p larian 4K lawan
+render 1080p biasa: PSNR purata 43.8 dB, terendah 37.3 dB).
+
+**`resvg` lawan pelukis Skia**, frame yang sama (±2,000 elemen), satu thread:
+
+| Pelukis | Raster satu frame |
+|---|---:|
+| `resvg` 0.50 (tiny-skia) | 34.9 s |
+| Skia, terjemahan terus | 0.80 s |
+| Skia, dengan pengoptimuman dalam `bake-remotion.md` | 0.33 s |

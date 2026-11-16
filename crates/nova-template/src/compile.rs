@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use nova_core::{
     Asset, AssetId, AssetKind, AudioTrack, BlendMode, Color, Easing, Error, ErrorCode, Fill, Fit,
-    Fps, GradientStop, Key, Lerp, Limits, LineCap, LineJoin, Node, NodeId, NodeKind, Prop, Scene,
-    Shadow, Stroke, TextAlign, TextNode, Track,
+    Fps, FrameEntry, FramePack, GradientStop, Key, Lerp, Limits, LineCap, LineJoin, Node, NodeId,
+    NodeKind, Prop, Scene, Shadow, Stroke, TextAlign, TextNode, Track,
 };
 
 use crate::assets::{content_hash, read_asset, resolve_asset_path};
@@ -125,6 +125,19 @@ pub fn compile(template: &Template, opts: &CompileOptions) -> Result<Compiled, V
         scene,
         warnings: c.warnings,
     })
+}
+
+/// `frames.json` of a frame pack, as written by the baker.
+#[derive(serde::Deserialize)]
+struct PackManifest {
+    nova_frames: u32,
+    width: u32,
+    height: u32,
+    shards: Vec<String>,
+    #[serde(default)]
+    shaders: HashMap<String, String>,
+    /// Per frame: [shard, offset, compressed length, raw length, content id].
+    index: Vec<[u64; 5]>,
 }
 
 /// Time window a layer inherits from its parent, in composition frames.
@@ -277,10 +290,11 @@ impl Compiler<'_> {
                 AssetType::Image => AssetKind::Image,
                 AssetType::Svg => AssetKind::Svg,
                 AssetType::Font => AssetKind::Font,
+                AssetType::Frames => AssetKind::Frames,
             };
-            let bytes =
+            let (file, bytes) =
                 match read_asset(&self.opts.asset_root, &def.src, limits.max_asset_file_bytes) {
-                    Ok((_, bytes)) => bytes,
+                    Ok(read) => read,
                     Err(mut e) => {
                         e.path = Some(format!("{path}.src"));
                         self.errors.push(e);
@@ -294,6 +308,19 @@ impl Compiler<'_> {
             if let Some(f) = &family {
                 self.font_families.insert(f.to_lowercase());
             }
+            let pack = if kind == AssetKind::Frames {
+                match self.frame_pack(&def.src, &file, &bytes) {
+                    Ok(pack) => Some(Arc::new(pack)),
+                    Err(m) => {
+                        self.errors
+                            .push(Error::at(ErrorCode::Asset, format!("{path}.src"), m));
+                        self.asset_index.insert(def.id.clone(), (u32::MAX, kind));
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
             let id = self.assets.len() as AssetId;
             self.assets.push(Asset {
                 id: def.id.clone(),
@@ -302,9 +329,90 @@ impl Compiler<'_> {
                 content_hash: content_hash(&bytes),
                 bytes: Arc::from(bytes),
                 family,
+                pack,
             });
             self.asset_index.insert(def.id.clone(), (id, kind));
         }
+    }
+
+    /// Parse and validate a frame pack manifest. Shards must be plain file
+    /// names next to the manifest; every index entry must lie inside its shard.
+    fn frame_pack(&self, src: &str, file: &std::path::Path, bytes: &[u8]) -> Result<FramePack, String> {
+        let limits = &self.opts.limits;
+        let m: PackManifest =
+            serde_json::from_slice(bytes).map_err(|e| format!("not a frame pack manifest: {e}"))?;
+        if m.nova_frames != 1 {
+            return Err(format!(
+                "frame pack version {} is not supported (this build reads version 1)",
+                m.nova_frames
+            ));
+        }
+        if m.width == 0 || m.height == 0 || m.width > limits.max_width || m.height > limits.max_height {
+            return Err(format!("frame pack size {}x{} is not allowed", m.width, m.height));
+        }
+        if m.index.is_empty() {
+            return Err("frame pack has no frames".into());
+        }
+        if m.index.len() as u64 > limits.max_duration_frames as u64 {
+            return Err(format!(
+                "frame pack has {} frames; the limit is {}",
+                m.index.len(),
+                limits.max_duration_frames
+            ));
+        }
+        if m.shards.is_empty() || m.shards.len() > limits.max_pack_shards {
+            return Err(format!(
+                "frame pack has {} shard files; between 1 and {} are allowed",
+                m.shards.len(),
+                limits.max_pack_shards
+            ));
+        }
+        let dir = file.parent().ok_or("frame pack manifest has no folder")?.to_path_buf();
+        let rel_dir = std::path::Path::new(src).parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let mut shards = Vec::with_capacity(m.shards.len());
+        let mut sizes = Vec::with_capacity(m.shards.len());
+        for name in &m.shards {
+            if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+                return Err(format!("shard `{name}` must be a plain file name next to the manifest"));
+            }
+            let rel = rel_dir.join(name);
+            let real = resolve_asset_path(&self.opts.asset_root, &rel.to_string_lossy())?;
+            sizes.push(std::fs::metadata(&real).map_err(|e| format!("`{name}`: {e}"))?.len());
+            shards.push(real);
+        }
+        let mut index = Vec::with_capacity(m.index.len());
+        for (f, e) in m.index.iter().enumerate() {
+            let [shard, offset, len, raw_len, content] = *e;
+            let ok = (shard as usize) < shards.len()
+                && len > 0
+                && len <= u32::MAX as u64
+                && offset.checked_add(len).is_some_and(|end| end <= sizes[shard as usize])
+                && raw_len <= limits.max_frame_bytes as u64
+                && (content as usize) <= f;
+            if !ok {
+                return Err(format!("frame {f} of the pack has an invalid index entry"));
+            }
+            index.push(FrameEntry {
+                shard: shard as u32,
+                offset,
+                len: len as u32,
+                raw_len: raw_len as u32,
+                content: content as u32,
+            });
+        }
+        let mut shaders: Vec<(String, String)> = m.shaders.into_iter().collect();
+        shaders.sort();
+        if shaders.iter().any(|(_, src)| src.len() > 64 * 1024) {
+            return Err("a shader in the frame pack is larger than 64 KiB".into());
+        }
+        Ok(FramePack {
+            width: m.width,
+            height: m.height,
+            shards,
+            index,
+            shaders,
+            dir,
+        })
     }
 
     fn compile_audio(&mut self, defs: &[AudioDef]) -> Vec<AudioTrack> {
@@ -532,7 +640,7 @@ impl Compiler<'_> {
             (
                 "size",
                 l.size.is_some(),
-                &[Rect, Ellipse, Path, Image, Svg, Group],
+                &[Rect, Ellipse, Path, Image, Svg, Frames, Group],
             ),
             ("corner_radius", l.corner_radius.is_some(), &[Rect, Group]),
             ("fill", l.fill.is_some(), &[Rect, Ellipse, Path]),
@@ -541,7 +649,7 @@ impl Compiler<'_> {
             ("d", l.d.is_some(), &[Path]),
             ("fill_rule", l.fill_rule.is_some(), &[Path]),
             ("text", l.text.is_some(), &[Text]),
-            ("asset", l.asset.is_some(), &[Image, Svg]),
+            ("asset", l.asset.is_some(), &[Image, Svg, Frames]),
             ("fit", l.fit.is_some(), &[Image, Svg]),
             ("layers", l.layers.is_some(), &[Group]),
             ("clip", l.clip.is_some(), &[Group]),
@@ -687,6 +795,7 @@ impl Compiler<'_> {
                         AssetKind::Image => "image",
                         AssetKind::Svg => "svg",
                         AssetKind::Font => "font",
+                        AssetKind::Frames => "frame pack",
                     };
                     self.err(
                         format!("{path}.asset"),
@@ -702,6 +811,37 @@ impl Compiler<'_> {
                     return None; // the asset itself failed to load; already reported
                 }
                 NodeKind::Image { asset, size, fit }
+            }
+            LayerType::Frames => {
+                let size = self.size(l, path, false);
+                let Some(asset_id) = &l.asset else {
+                    self.err(path, "a `frames` layer needs `asset`");
+                    return None;
+                };
+                let Some(&(asset, kind)) = self.asset_index.get(asset_id) else {
+                    self.err(
+                        format!("{path}.asset"),
+                        format!("no asset with id `{asset_id}`"),
+                    );
+                    return None;
+                };
+                self.used_assets.insert(asset_id.clone());
+                if kind != AssetKind::Frames {
+                    self.err(
+                        format!("{path}.asset"),
+                        format!("asset `{asset_id}` is not a frame pack; a `frames` layer needs a `frames` asset"),
+                    );
+                    return None;
+                }
+                if asset == u32::MAX {
+                    return None; // the pack itself failed to load; already reported
+                }
+                let pack = self.assets[asset as usize].pack.as_ref()?;
+                NodeKind::Frames {
+                    asset,
+                    size: size.unwrap_or([pack.width as f32, pack.height as f32]),
+                    frames: pack.index.len() as u32,
+                }
             }
             LayerType::Group => {
                 let size = self.size(l, path, false);

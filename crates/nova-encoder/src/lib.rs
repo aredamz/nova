@@ -10,7 +10,9 @@ pub mod yuv;
 
 use nova_core::Result;
 
-pub use ffmpeg::{EncodeProfile, EncodeReport, EncoderConfig, FfmpegSink, ProbeInfo, probe};
+pub use ffmpeg::{
+    EncodeProfile, EncodeReport, EncoderConfig, FfmpegSink, ProbeInfo, ScaledOutput, probe,
+};
 
 /// Pixel layout a sink wants its frames in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

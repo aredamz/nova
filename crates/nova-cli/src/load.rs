@@ -14,6 +14,8 @@ use crate::report::{Failure, human_bytes, r3};
 
 pub struct Loaded {
     pub scene: Arc<Scene>,
+    /// Width and height the template asks for, before `--scale`.
+    pub template_size: (u32, u32),
     pub backend: SkiaBackend,
     pub warnings: Vec<Warning>,
     /// Read + bind + validate + compile, including reading asset files.
@@ -37,7 +39,29 @@ pub fn load(input: &InputArgs) -> Result<Loaded, Failure> {
     let compiled = nova_template::load_file(&input.template, data.as_ref(), &opts)?;
     let compile_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    let scene = Arc::new(compiled.scene);
+    let template_size = (compiled.scene.width, compiled.scene.height);
+    let scene = if input.scale == 1.0 {
+        compiled.scene
+    } else {
+        if !(input.scale.is_finite() && (0.05..=16.0).contains(&input.scale)) {
+            return Err(Failure::one(nova_core::Error::new(
+                nova_core::ErrorCode::Validation,
+                format!("--scale must be between 0.05 and 16 (got {})", input.scale),
+            )));
+        }
+        let scaled = compiled.scene.scaled(input.scale);
+        if scaled.width > limits.max_width || scaled.height > limits.max_height {
+            return Err(Failure::one(nova_core::Error::new(
+                nova_core::ErrorCode::Validation,
+                format!(
+                    "--scale {} gives {}x{}; the limit is {}x{}",
+                    input.scale, scaled.width, scaled.height, limits.max_width, limits.max_height
+                ),
+            )));
+        }
+        scaled
+    };
+    let scene = Arc::new(scene);
     let prepare_opts = PrepareOptions {
         system_fonts: !input.no_system_fonts,
         limits,
@@ -46,6 +70,7 @@ pub fn load(input: &InputArgs) -> Result<Loaded, Failure> {
     let (backend, prepare) = SkiaBackend::prepare(Arc::clone(&scene), &prepare_opts)?;
     Ok(Loaded {
         scene,
+        template_size,
         backend,
         warnings: compiled.warnings,
         compile_ms,
@@ -199,6 +224,7 @@ pub fn cmd_inspect(input: &InputArgs, json: bool) -> Result<(), Failure> {
                     AssetKind::Image => "image",
                     AssetKind::Svg => "svg",
                     AssetKind::Font => "font",
+                    AssetKind::Frames => "frames",
                 };
                 json!({ "id": a.id, "type": kind, "src": a.src, "bytes": a.bytes.len(), "hash": format!("{:016x}", a.content_hash) })
             })
@@ -253,6 +279,7 @@ pub fn cmd_inspect(input: &InputArgs, json: bool) -> Result<(), Failure> {
             AssetKind::Image => "image",
             AssetKind::Svg => "svg",
             AssetKind::Font => "font",
+                    AssetKind::Frames => "frames",
         };
         println!(
             "  {:<6} {:<20} {:<36} {:>10}  {:016x}",

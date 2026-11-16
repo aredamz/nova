@@ -6,8 +6,10 @@
 //! used; no GPU context is ever created.
 
 mod assets;
+mod frames;
 mod layers;
 mod render;
+mod svg;
 mod text;
 
 use std::collections::HashMap;
@@ -77,6 +79,10 @@ pub(crate) struct Shared {
     pub naturals: Vec<Option<(f32, f32)>>,
     /// Indexed by node id; `Some` for image layers that draw something.
     pub image_plans: Vec<Option<ImagePlan>>,
+    /// Indexed by asset id; `Some` for frame packs.
+    pub packs: Vec<Option<frames::PackRuntime>>,
+    /// Repeating full-frame pictures of baked frames (shader passes, vignettes).
+    pub overlays: frames::OverlayCache,
     /// (family name, typeface) for every font asset.
     pub fonts: Vec<(String, Typeface)>,
     pub system_fonts: bool,
@@ -121,13 +127,42 @@ impl SkiaBackend {
                 Err(m) => errors.push(asset_error(&asset.id, &asset.src, m)),
             }
         }
+        // Baked frames may contain text anywhere; static SVGs are checked.
         let needs_system_fonts_for_svg = opts.system_fonts
-            && scene
-                .assets
-                .iter()
-                .any(|a| a.kind == AssetKind::Svg && assets::svg_has_text(&a.bytes));
+            && scene.assets.iter().any(|a| {
+                a.kind == AssetKind::Frames
+                    || (a.kind == AssetKind::Svg && assets::svg_has_text(&a.bytes))
+            });
         if needs_system_fonts_for_svg {
             fontdb.load_system_fonts();
+            // Generic families resolve the way a browser on this machine would:
+            // Chrome's defaults are Arial / Times New Roman / Monospace, which the
+            // system font configuration maps to what is installed (Liberation Sans,
+            // ...). fontdb's own defaults are usually not installed on Linux, and
+            // text whose font cannot be found is dropped.
+            let mgr = skia_safe::FontMgr::new();
+            let style = skia_safe::FontStyle::normal();
+            let resolve = |names: &[&str]| {
+                names
+                    .iter()
+                    .find_map(|n| mgr.match_family_style(n, style))
+                    .map(|t| t.family_name())
+            };
+            if let Some(f) = resolve(&["Arial", "sans-serif"]) {
+                fontdb.set_sans_serif_family(f);
+            }
+            if let Some(f) = resolve(&["Times New Roman", "serif"]) {
+                fontdb.set_serif_family(f);
+            }
+            if let Some(f) = resolve(&["monospace"]) {
+                fontdb.set_monospace_family(f);
+            }
+            if let Some(f) = resolve(&["cursive"]) {
+                fontdb.set_cursive_family(f);
+            }
+            if let Some(f) = resolve(&["fantasy"]) {
+                fontdb.set_fantasy_family(f);
+            }
         }
         let fontdb = Arc::new(fontdb);
 
@@ -136,10 +171,30 @@ impl SkiaBackend {
         let mut decoded: HashMap<AssetId, assets::Decoded> = HashMap::new();
         let mut svgs: HashMap<AssetId, assets::SvgDoc> = HashMap::new();
         let mut naturals: Vec<Option<(f32, f32)>> = vec![None; scene.assets.len()];
+        let mut packs: Vec<Option<frames::PackRuntime>> =
+            (0..scene.assets.len()).map(|_| None).collect();
         for (i, asset) in scene.assets.iter().enumerate() {
             let id = i as AssetId;
             match asset.kind {
                 AssetKind::Font => {}
+                AssetKind::Frames => {
+                    let Some(pack) = &asset.pack else { continue };
+                    // Compile every shader once now, so a bad one is an asset
+                    // error instead of a failure in the middle of a render.
+                    for (key, src) in &pack.shaders {
+                        if let Err(m) = skia_safe::RuntimeEffect::make_for_shader(src, None) {
+                            errors.push(asset_error(
+                                &asset.id,
+                                &asset.src,
+                                format!("shader `{key}` does not compile: {m}"),
+                            ));
+                        }
+                    }
+                    match frames::PackRuntime::open(Arc::clone(pack), Arc::clone(&fontdb)) {
+                        Ok(rt) => packs[i] = Some(rt),
+                        Err(m) => errors.push(asset_error(&asset.id, &asset.src, m)),
+                    }
+                }
                 AssetKind::Image => match assets::decode_image(&asset.bytes, &opts.limits) {
                     Ok(img) => {
                         naturals[i] = Some((img.width as f32, img.height as f32));
@@ -246,6 +301,8 @@ impl SkiaBackend {
             scene,
             naturals,
             image_plans,
+            packs,
+            overlays: frames::OverlayCache::new(),
             fonts,
             system_fonts: opts.system_fonts,
             layers,

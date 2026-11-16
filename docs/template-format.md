@@ -87,6 +87,7 @@ Kotak setiap jenis layer:
 | `rect`, `ellipse` | `size` |
 | `text` | `max_width` (jika ada) atau lebar baris terpanjang, kali tinggi teks |
 | `image`, `svg` | `size`, atau saiz asal aset |
+| `frames` | `size`, atau saiz pek |
 | `path`, `group` | `size` jika diberi, jika tidak kosong (anchor di origin) |
 
 ## Jenis layer
@@ -190,6 +191,19 @@ SVG statik sahaja (tiada animasi SMIL/CSS dalam fail). SVG diraster sekali pada 
 terbesar yang akan dipaparkan sepanjang video, jadi ia kekal tajam walaupun diskala besar.
 Rujukan fail atau URL luar dalam SVG diabaikan.
 
+### `frames`
+
+```json
+{ "id": "episod", "type": "frames", "asset": "bake" }
+```
+
+Jujukan frame yang dibakar di luar NOVA: setiap frame ialah dokumen SVG dan hantaran
+shader yang NOVA lukis. `asset` merujuk aset `frames` (manifes pek). `size` lalai ialah
+saiz pek; saiz lain menskala lukisan. Frame tempatan 0 layer memaparkan frame pertama pek,
+dan frame terakhir ditahan. Tiada property sendiri yang boleh dianimasikan, tetapi
+transform, `opacity`, `blur`, `shadow` dan `blend_mode` berfungsi seperti layer lain.
+Lihat [`bake-remotion.md`](bake-remotion.md).
+
 ### `group`
 
 ```json
@@ -263,7 +277,8 @@ nilai tepat mengambil nilai sasaran.
   { "id": "regular", "type": "font",  "src": "assets/NotoSans-Regular.ttf", "family": "Noto Sans" },
   { "id": "bold",    "type": "font",  "src": "assets/NotoSans-Bold.ttf",    "family": "Noto Sans" },
   { "id": "foto",    "type": "image", "src": "assets/product.jpg" },
-  { "id": "logo",    "type": "svg",   "src": "assets/logo.svg" }
+  { "id": "logo",    "type": "svg",   "src": "assets/logo.svg" },
+  { "id": "bake",    "type": "frames", "src": "pack/frames.json" }
 ]
 ```
 

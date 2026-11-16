@@ -17,6 +17,7 @@ use skia_safe::canvas::{SaveLayerRec, SrcRectConstraint};
 use skia_safe::gradient::{
     Colors, Gradient, Interpolation, interpolation::InPremul, shaders as gradient_shaders,
 };
+use resvg::usvg;
 use skia_safe::textlayout::FontCollection;
 use skia_safe::{
     AlphaType, BlendMode as SkBlend, BlurStyle, Canvas, Color4f, ColorType, FilterMode,
@@ -26,6 +27,7 @@ use skia_safe::{
 };
 
 use super::Shared;
+use super::frames::{self, PackRuntime};
 use super::layers::CachedLayer;
 use super::text::{self, TextLayout};
 use crate::{FrameRenderer, RendererStats};
@@ -54,6 +56,12 @@ struct Cache {
     fonts: FontCollection,
     texts: HashMap<TextKey, Rc<TextLayout>>,
     paths: HashMap<NodeId, Path>,
+    /// Compiled shaders of baked frames, by key.
+    effects: HashMap<String, skia_safe::RuntimeEffect>,
+    /// Decoded images referenced from baked SVG.
+    svg_images: super::svg::ImageMemo,
+    /// First failure while drawing the current frame.
+    error: Option<Error>,
     stats: RendererStats,
 }
 
@@ -74,6 +82,9 @@ impl SkiaRenderer {
                 fonts,
                 texts: HashMap::new(),
                 paths: HashMap::new(),
+                effects: HashMap::new(),
+                svg_images: HashMap::new(),
+                error: None,
                 stats: RendererStats::default(),
             },
         }
@@ -102,6 +113,9 @@ impl FrameRenderer for SkiaRenderer {
         };
         for node in &plan.nodes {
             painter.draw(canvas, node);
+        }
+        if let Some(e) = self.cache.error.take() {
+            return Err(e);
         }
         self.cache.stats.frames += 1;
         Ok(())
@@ -212,6 +226,7 @@ impl Painter<'_> {
             (EvalKind::Group { .. }, NodeKind::Group { size, .. }) => {
                 size.map_or((0.0, 0.0), |s| (s[0], s[1]))
             }
+            (EvalKind::Frames { .. }, NodeKind::Frames { size, .. }) => (size[0], size[1]),
             _ => (0.0, 0.0),
         }
     }
@@ -514,6 +529,20 @@ impl Painter<'_> {
                 layout.paragraph.paint(canvas, (left, top));
             }
             EvalKind::Image => self.draw_image(canvas, n.node, node, size, alpha, blend),
+            // Opacity and blend for baked frames always arrive through a layer.
+            EvalKind::Frames { content } => {
+                if let NodeKind::Frames { asset, .. } = &node.kind
+                    && let Some(rt) = &self.shared.packs[*asset as usize]
+                    && let Err(m) = self.draw_frames(canvas, rt, *content, size)
+                    && self.cache.error.is_none()
+                {
+                    self.cache.error = Some(Error::at(
+                        ErrorCode::Render,
+                        format!("layer `{}`", node.id),
+                        m,
+                    ));
+                }
+            }
             EvalKind::Group { children } => {
                 if let NodeKind::Group {
                     clip: true,
@@ -617,13 +646,170 @@ impl Painter<'_> {
         );
     }
 
+    /// Draw one baked frame: its operations in order, scaled to the layer box.
+    fn draw_frames(
+        &mut self,
+        canvas: &Canvas,
+        rt: &PackRuntime,
+        content: u32,
+        size: (f32, f32),
+    ) -> std::result::Result<(), String> {
+        use std::time::Instant;
+        let (pw, ph) = (rt.pack.width, rt.pack.height);
+        let t0 = Instant::now();
+        let blob = rt.read(content)?;
+        let list = frames::ops(&blob)?;
+        self.cache.stats.baked_read_us += t0.elapsed().as_micros() as u64;
+        self.cache.stats.baked_frames += 1;
+
+        canvas.save();
+        if size.0 != pw as f32 || size.1 != ph as f32 {
+            canvas.scale((size.0 / pw as f32, size.1 / ph as f32));
+        }
+        let mut result = Ok(());
+        for (kind, payload) in list {
+            result = match kind {
+                frames::OP_SVG => self.draw_baked_svg(canvas, rt, payload),
+                frames::OP_SHADER => self.draw_baked_shader(canvas, rt, payload),
+                other => Err(format!("unknown operation {other} in a baked frame")),
+            };
+            if result.is_err() {
+                break;
+            }
+        }
+        canvas.restore();
+        result
+    }
+
+    fn draw_baked_svg(
+        &mut self,
+        canvas: &Canvas,
+        rt: &PackRuntime,
+        svg: &[u8],
+    ) -> std::result::Result<(), String> {
+        use std::time::Instant;
+        let t0 = Instant::now();
+        let tree = usvg::Tree::from_data(svg, &rt.options)
+            .map_err(|e| format!("baked SVG does not parse: {e}"))?;
+        let t1 = Instant::now();
+        // The document's viewport clips it, as it would in a browser.
+        canvas.save();
+        canvas.clip_rect(
+            SkRect::from_wh(rt.pack.width as f32, rt.pack.height as f32),
+            None,
+            false,
+        );
+        let mut painter = super::svg::SvgPainter {
+            images: &mut self.cache.svg_images,
+            overlays: &self.shared.overlays,
+            frame: (rt.pack.width as i32, rt.pack.height as i32),
+            prof: Default::default(),
+        };
+        painter.render(&tree, canvas);
+        canvas.restore();
+        if std::env::var_os("NOVA_SVG_PROFILE").is_some() {
+            eprintln!("svg {:.1} ms {:?}", t1.elapsed().as_secs_f64() * 1e3, painter.prof);
+        }
+        self.cache.stats.baked_parse_us += (t1 - t0).as_micros() as u64;
+        self.cache.stats.baked_raster_us += t1.elapsed().as_micros() as u64;
+        Ok(())
+    }
+
+    /// A full-frame SkSL pass, composited source-over like a Skia `<Fill>`.
+    fn draw_baked_shader(
+        &mut self,
+        canvas: &Canvas,
+        rt: &PackRuntime,
+        payload: &[u8],
+    ) -> std::result::Result<(), String> {
+        let op: serde_json::Value =
+            serde_json::from_slice(payload).map_err(|e| format!("bad shader operation: {e}"))?;
+        let key = op["shader"].as_str().ok_or("shader operation has no key")?;
+        if !self.cache.effects.contains_key(key) {
+            let src = rt
+                .shader_source(key)
+                .ok_or_else(|| format!("shader `{key}` is not in the pack"))?;
+            let effect = skia_safe::RuntimeEffect::make_for_shader(src, None)
+                .map_err(|e| format!("shader `{key}` does not compile: {e}"))?;
+            self.cache.effects.insert(key.to_owned(), effect);
+        }
+        let effect = &self.cache.effects[key];
+        let mut data = vec![0u8; effect.uniform_size()];
+        for u in effect.uniforms() {
+            let mut values = Vec::new();
+            flatten_numbers(&op["uniforms"][u.name()], &mut values);
+            let is_int = format!("{:?}", u.ty()).starts_with("Int");
+            let slots = u.size_in_bytes() / 4;
+            if values.len() < slots {
+                return Err(format!(
+                    "shader `{key}`: uniform `{}` needs {slots} numbers, the frame gives {}",
+                    u.name(),
+                    values.len()
+                ));
+            }
+            for (i, v) in values.iter().take(slots).enumerate() {
+                let bytes = if is_int {
+                    (*v as i32).to_le_bytes()
+                } else {
+                    (*v as f32).to_le_bytes()
+                };
+                data[u.offset() + i * 4..u.offset() + i * 4 + 4].copy_from_slice(&bytes);
+            }
+        }
+        let shader = effect
+            .make_shader(skia_safe::Data::new_copy(&data), &[], None)
+            .ok_or_else(|| format!("shader `{key}` could not be instantiated"))?;
+        let mut paint = Paint::default();
+        paint.set_shader(shader);
+        let (pw, ph) = (rt.pack.width as i32, rt.pack.height as i32);
+        let full = SkRect::from_wh(pw as f32, ph as f32);
+        // On the CPU a shader is interpreted, tens of nanoseconds a pixel,
+        // and passes repeat (film grain holds for three frames): render the
+        // pass once into a picture and composite that. The pass is always
+        // made at the pack's own resolution, so a cache hit and a miss give
+        // the same pixels, and a per-pixel effect such as grain keeps the
+        // size it was written for when the frame is drawn larger.
+        let mut cache_key = b"shader:".to_vec();
+        cache_key.extend_from_slice(payload);
+        let image = match self.shared.overlays.get(&cache_key) {
+            Some(image) => image,
+            None => {
+                let info = ImageInfo::new((pw, ph), ColorType::RGBA8888, AlphaType::Premul, None);
+                let mut surface = surfaces::raster(&info, None, None)
+                    .ok_or("could not allocate a shader pass")?;
+                surface.canvas().clear(Color4f::new(0.0, 0.0, 0.0, 0.0));
+                surface.canvas().draw_rect(full, &paint);
+                let image = surface.image_snapshot();
+                self.shared.overlays.put(cache_key, image.clone());
+                image
+            }
+        };
+        if !canvas.local_to_device_as_3x3().is_identity() {
+            // Catmull-Rom keeps the contrast of fine noise when enlarging;
+            // smooth passes (fog, glow) enlarge cleanly either way.
+            let sampling = SamplingOptions::from(skia_safe::CubicResampler::catmull_rom());
+            canvas.draw_image_rect_with_sampling_options(
+                &image,
+                None,
+                full,
+                sampling,
+                &Paint::default(),
+            );
+            return Ok(());
+        }
+        canvas.draw_image(&image, (0.0, 0.0), None);
+        Ok(())
+    }
+
     /// Bounds of what a node draws, in its own coordinate space, before its
     /// filters. `None` means unknown. Used to keep offscreen layers small.
     fn content_bounds(&mut self, n: &EvalNode, node: &Node, size: (f32, f32)) -> Option<Rect> {
         let (bw, bh) = size;
         let stroke_pad = |s: &Option<EvalStroke>| s.map_or(0.0, |s| s.width * 2.0 + 1.0);
         match &n.kind {
-            EvalKind::Solid { .. } | EvalKind::Image => Some(Rect::from_wh(bw, bh)),
+            EvalKind::Solid { .. } | EvalKind::Image | EvalKind::Frames { .. } => {
+                Some(Rect::from_wh(bw, bh))
+            }
             EvalKind::Rect { stroke, .. } | EvalKind::Ellipse { stroke, .. } => {
                 Some(Rect::from_wh(bw, bh).inflate(stroke_pad(stroke)))
             }
@@ -704,7 +890,16 @@ fn is_single_draw(kind: &EvalKind) -> bool {
         EvalKind::Rect { fill, stroke, .. }
         | EvalKind::Ellipse { fill, stroke, .. }
         | EvalKind::Path { fill, stroke } => fill.is_some() != stroke.is_some(),
-        EvalKind::Text { .. } | EvalKind::Group { .. } => false,
+        EvalKind::Text { .. } | EvalKind::Group { .. } | EvalKind::Frames { .. } => false,
+    }
+}
+
+/// Numbers of a JSON uniform value: a number, or (nested) arrays of numbers.
+fn flatten_numbers(v: &serde_json::Value, out: &mut Vec<f64>) {
+    match v {
+        serde_json::Value::Number(n) => out.extend(n.as_f64()),
+        serde_json::Value::Array(items) => items.iter().for_each(|i| flatten_numbers(i, out)),
+        _ => {}
     }
 }
 

@@ -26,25 +26,34 @@ pub struct EncodeProfile {
     pub name: String,
     pub preset: String,
     pub crf: u8,
+    /// x264 `-tune` (`grain`, `film`, `animation`, ...); `None` leaves it out.
+    pub tune: Option<String>,
 }
 
 impl EncodeProfile {
-    pub const NAMES: &'static [&'static str] = &["preview", "balanced", "high_quality"];
+    pub const NAMES: &'static [&'static str] = &["preview", "balanced", "high_quality", "master"];
+    pub const TUNES: &'static [&'static str] =
+        &["film", "animation", "grain", "stillimage", "fastdecode", "zerolatency"];
 
     pub fn named(name: &str) -> Option<EncodeProfile> {
-        let (preset, crf) = match name {
+        let (preset, crf, tune) = match name {
             // quick look; file size and fine detail are not the priority
-            "preview" => ("veryfast", 23),
+            "preview" => ("veryfast", 23, None),
             // x264's default preset at CRF 18: the settings to compare
             // against a Remotion render at the same CRF
-            "balanced" => ("medium", 18),
-            "high_quality" => ("slow", 15),
+            "balanced" => ("medium", 18, None),
+            "high_quality" => ("slow", 15, None),
+            // a file to keep and to upload: platforms encode it again, so it
+            // should carry fine texture (film grain, hairlines) instead of
+            // smoothing it. `grain` keeps noise as noise; costs bitrate.
+            "master" => ("medium", 17, Some("grain")),
             _ => return None,
         };
         Some(EncodeProfile {
             name: name.to_owned(),
             preset: preset.to_owned(),
             crf,
+            tune: tune.map(str::to_owned),
         })
     }
 }
@@ -61,11 +70,30 @@ pub struct EncoderConfig {
     /// x264 threads; `None` lets x264 decide.
     pub threads: Option<u32>,
     pub audio: Vec<AudioTrack>,
+    /// More files encoded from the same frames in the same FFmpeg run, each
+    /// resized (a 1080p delivery file next to a 4K master, for example).
+    pub extra: Vec<ScaledOutput>,
+    /// Encode the main file at this size instead of the frame size (Lanczos).
+    /// Frames drawn larger than the delivery size are supersampled this way.
+    pub resize: Option<(u32, u32)>,
+}
+
+/// A second output: the frames resized to `width` x `height` (Lanczos), with
+/// its own encode settings and the same audio.
+#[derive(Debug, Clone)]
+pub struct ScaledOutput {
+    pub output: PathBuf,
+    pub width: u32,
+    pub height: u32,
+    pub profile: EncodeProfile,
 }
 
 impl EncoderConfig {
     /// The full FFmpeg argument list (everything after the program name).
-    pub fn args(&self, write_to: &Path) -> Vec<OsString> {
+    /// `write_to` is where the main file goes; `extra_to` has one path for
+    /// each entry of `extra`.
+    pub fn args(&self, write_to: &Path, extra_to: &[PathBuf]) -> Vec<OsString> {
+        assert_eq!(extra_to.len(), self.extra.len());
         let mut a: Vec<OsString> = Vec::new();
         let mut push = |s: &str| a.push(OsString::from(s));
         for s in ["-hide_banner", "-loglevel", "error", "-y"] {
@@ -98,58 +126,106 @@ impl EncoderConfig {
             a.push(OsString::from("-i"));
             a.push(track.path.clone().into_os_string());
         }
+
+        // One filter graph feeds every output: the video is split and resized
+        // for the extra files, the mixed audio is split alongside it.
+        let outputs = 1 + self.extra.len();
+        // accurate_rnd + full_chroma_int: no shortcuts in the resize; the
+        // matrix is passed through untouched (BT.709 in and out).
+        let scale = |w: u32, h: u32| format!("scale={w}:{h}:flags=lanczos+accurate_rnd+full_chroma_int");
+        let filtered_video = self.resize.is_some() || !self.extra.is_empty();
+        let mut graph = String::new();
+        if !self.extra.is_empty() {
+            let main = if self.resize.is_some() { "s0" } else { "v0" };
+            graph.push_str(&format!("[0:v]split={outputs}[{main}]"));
+            for i in 1..outputs {
+                graph.push_str(&format!("[s{i}]"));
+            }
+            if let Some((w, h)) = self.resize {
+                graph.push_str(&format!(";[s0]{}[v0]", scale(w, h)));
+            }
+            for (i, e) in self.extra.iter().enumerate() {
+                graph.push_str(&format!(";[s{n}]{}[v{n}]", scale(e.width, e.height), n = i + 1));
+            }
+        } else if let Some((w, h)) = self.resize {
+            graph.push_str(&format!("[0:v]{}[v0]", scale(w, h)));
+        }
+        let audio = audio_filter_graph(&self.audio, self.fps);
+        if let Some(audio) = &audio {
+            if !graph.is_empty() {
+                graph.push(';');
+            }
+            graph.push_str(audio);
+            if outputs > 1 {
+                graph.push_str(&format!(";[aout]asplit={outputs}"));
+                for i in 0..outputs {
+                    graph.push_str(&format!("[a{i}]"));
+                }
+            }
+        }
         let mut push = |s: &str| a.push(OsString::from(s));
-        if let Some(graph) = audio_filter_graph(&self.audio, self.fps) {
+        if !graph.is_empty() {
             push("-filter_complex");
             push(&graph);
+        }
+
+        let duration = format!("{:.6}", self.fps.frame_to_seconds(self.frame_count as i64));
+        let mut files = vec![(write_to, &self.profile)];
+        files.extend(extra_to.iter().map(PathBuf::as_path).zip(self.extra.iter().map(|e| &e.profile)));
+        for (i, (file, profile)) in files.into_iter().enumerate() {
+            let mut push = |s: &str| a.push(OsString::from(s));
+            push("-map");
+            push(&if filtered_video { format!("[v{i}]") } else { "0:v:0".to_owned() });
+            match &audio {
+                Some(_) => {
+                    push("-map");
+                    push(&if outputs > 1 { format!("[a{i}]") } else { "[aout]".to_owned() });
+                    for s in ["-c:a", "aac", "-b:a", "192k"] {
+                        push(s);
+                    }
+                }
+                None => push("-an"),
+            }
+            for s in ["-c:v", "libx264", "-preset"] {
+                push(s);
+            }
+            push(&profile.preset);
+            push("-crf");
+            push(&profile.crf.to_string());
+            if let Some(tune) = &profile.tune {
+                push("-tune");
+                push(tune);
+            }
+            for s in ["-pix_fmt", "yuv420p"] {
+                push(s);
+            }
+            // Tag the stream so players use the matrix the frames were made with.
             for s in [
-                "-map", "0:v:0", "-map", "[aout]", "-c:a", "aac", "-b:a", "192k",
+                "-color_range",
+                "tv",
+                "-colorspace",
+                "bt709",
+                "-color_primaries",
+                "bt709",
+                "-color_trc",
+                "bt709",
             ] {
                 push(s);
             }
-        } else {
-            for s in ["-map", "0:v:0", "-an"] {
+            if let Some(t) = self.threads {
+                push("-threads");
+                push(&t.to_string());
+            }
+            // Stop at the video's length even if an audio track is longer.
+            push("-frames:v");
+            push(&self.frame_count.to_string());
+            push("-t");
+            push(&duration);
+            for s in ["-movflags", "+faststart", "-f", "mp4"] {
                 push(s);
             }
+            a.push(file.as_os_str().to_owned());
         }
-        for s in ["-c:v", "libx264", "-preset"] {
-            push(s);
-        }
-        push(&self.profile.preset);
-        push("-crf");
-        push(&self.profile.crf.to_string());
-        for s in ["-pix_fmt", "yuv420p"] {
-            push(s);
-        }
-        // Tag the stream so players use the matrix the frames were made with.
-        for s in [
-            "-color_range",
-            "tv",
-            "-colorspace",
-            "bt709",
-            "-color_primaries",
-            "bt709",
-            "-color_trc",
-            "bt709",
-        ] {
-            push(s);
-        }
-        if let Some(t) = self.threads {
-            push("-threads");
-            push(&t.to_string());
-        }
-        // Stop at the video's length even if an audio track is longer.
-        push("-frames:v");
-        push(&self.frame_count.to_string());
-        push("-t");
-        push(&format!(
-            "{:.6}",
-            self.fps.frame_to_seconds(self.frame_count as i64)
-        ));
-        for s in ["-movflags", "+faststart", "-f", "mp4"] {
-            push(s);
-        }
-        a.push(write_to.as_os_str().to_owned());
         a
     }
 }
@@ -198,6 +274,8 @@ pub struct EncodeReport {
     /// From spawning FFmpeg to its exit.
     pub total_ms: f64,
     pub output_bytes: u64,
+    /// Size of each extra output, in `EncoderConfig::extra` order.
+    pub extra_bytes: Vec<u64>,
     pub command: Vec<String>,
 }
 
@@ -207,6 +285,8 @@ pub struct FfmpegSink {
     stdin: Option<ChildStdin>,
     stderr: Option<JoinHandle<String>>,
     tmp: PathBuf,
+    /// Temporary file of each extra output, in `config.extra` order.
+    extra_tmp: Vec<PathBuf>,
     config: EncoderConfig,
     frame_len: usize,
     frames_written: u64,
@@ -240,7 +320,36 @@ impl FfmpegSink {
             .and_then(|n| n.to_str())
             .unwrap_or("output.mp4");
         let tmp = dir.join(format!(".{name}.{}.partial", std::process::id()));
-        let args = config.args(&tmp);
+        if let Some((w, h)) = config.resize
+            && (!w.is_multiple_of(2) || !h.is_multiple_of(2) || w == 0 || h == 0)
+        {
+            return Err(Error::new(
+                ErrorCode::Encode,
+                format!("the output size {w}x{h} needs even, non-zero width and height"),
+            ));
+        }
+        let mut extra_tmp = Vec::new();
+        for e in &config.extra {
+            if !e.width.is_multiple_of(2) || !e.height.is_multiple_of(2) || e.width == 0 || e.height == 0 {
+                return Err(Error::new(
+                    ErrorCode::Encode,
+                    format!("extra output `{}` needs even, non-zero width and height", e.output.display()),
+                ));
+            }
+            let dir = match e.output.parent() {
+                Some(p) if !p.as_os_str().is_empty() => p.to_owned(),
+                _ => PathBuf::from("."),
+            };
+            if !dir.is_dir() {
+                return Err(Error::new(
+                    ErrorCode::Io,
+                    format!("output directory `{}` does not exist", dir.display()),
+                ));
+            }
+            let name = e.output.file_name().and_then(|n| n.to_str()).unwrap_or("output.mp4");
+            extra_tmp.push(dir.join(format!(".{name}.{}.partial", std::process::id())));
+        }
+        let args = config.args(&tmp, &extra_tmp);
         let command: Vec<String> = std::iter::once(config.ffmpeg.to_string_lossy().into_owned())
             .chain(args.iter().map(|a| a.to_string_lossy().into_owned()))
             .collect();
@@ -284,6 +393,7 @@ impl FfmpegSink {
             stdin,
             stderr: Some(stderr),
             tmp,
+            extra_tmp,
             frame_len: yuv::i420_len(config.width as usize, config.height as usize),
             config,
             frames_written: 0,
@@ -292,6 +402,14 @@ impl FfmpegSink {
             command,
             finished: false,
         })
+    }
+
+    /// Remove every partial file.
+    fn discard(&self) {
+        let _ = std::fs::remove_file(&self.tmp);
+        for t in &self.extra_tmp {
+            let _ = std::fs::remove_file(t);
+        }
     }
 
     fn collect_stderr(&mut self) -> String {
@@ -306,7 +424,7 @@ impl FfmpegSink {
         self.stdin = None;
         let status = self.child.wait();
         let stderr = self.collect_stderr();
-        let _ = std::fs::remove_file(&self.tmp);
+        self.discard();
         self.finished = true;
         let status = status
             .map(|s| s.to_string())
@@ -332,57 +450,63 @@ impl FfmpegSink {
             .map_err(|e| Error::new(ErrorCode::Encode, format!("waiting for FFmpeg: {e}")));
         let stderr = self.collect_stderr();
         self.finished = true;
-        let fail = |tmp: &Path, message: String| {
-            let _ = std::fs::remove_file(tmp);
-            Err(Error::new(ErrorCode::Encode, message))
-        };
         let status = match status {
             Ok(s) => s,
             Err(e) => {
-                let _ = std::fs::remove_file(&self.tmp);
+                self.discard();
                 return Err(e);
             }
         };
-        if !status.success() {
+        let problem = if !status.success() {
             let detail = if stderr.is_empty() {
                 String::new()
             } else {
                 format!("\n--- ffmpeg stderr ---\n{stderr}")
             };
-            return fail(&self.tmp, format!("FFmpeg failed ({status}){detail}"));
+            Some(format!("FFmpeg failed ({status}){detail}"))
+        } else if self.frames_written != self.config.frame_count as u64 {
+            Some(format!(
+                "only {} of {} frames were written to the encoder",
+                self.frames_written, self.config.frame_count
+            ))
+        } else {
+            None
+        };
+        if let Some(message) = problem {
+            self.discard();
+            return Err(Error::new(ErrorCode::Encode, message));
         }
-        if self.frames_written != self.config.frame_count as u64 {
-            return fail(
-                &self.tmp,
-                format!(
-                    "only {} of {} frames were written to the encoder",
-                    self.frames_written, self.config.frame_count
-                ),
-            );
+        let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        let output_bytes = size(&self.tmp);
+        if output_bytes == 0 || self.extra_tmp.iter().any(|t| size(t) == 0) {
+            self.discard();
+            return Err(Error::new(
+                ErrorCode::Encode,
+                "FFmpeg exited successfully but produced an empty file",
+            ));
         }
-        let output_bytes = std::fs::metadata(&self.tmp).map(|m| m.len()).unwrap_or(0);
-        if output_bytes == 0 {
-            return fail(
-                &self.tmp,
-                "FFmpeg exited successfully but produced an empty file".into(),
-            );
+        let mut moves = vec![(self.tmp.clone(), self.config.output.clone())];
+        moves.extend(self.extra_tmp.iter().cloned().zip(self.config.extra.iter().map(|e| e.output.clone())));
+        let mut extra_bytes = Vec::new();
+        for (i, (from, to)) in moves.iter().enumerate() {
+            if i > 0 {
+                extra_bytes.push(size(from));
+            }
+            if let Err(e) = std::fs::rename(from, to) {
+                self.discard();
+                return Err(Error::io(
+                    format!("cannot move the finished video to `{}`", to.display()),
+                    e,
+                ));
+            }
         }
-        std::fs::rename(&self.tmp, &self.config.output).map_err(|e| {
-            let _ = std::fs::remove_file(&self.tmp);
-            Error::io(
-                format!(
-                    "cannot move the finished video to `{}`",
-                    self.config.output.display()
-                ),
-                e,
-            )
-        })?;
         Ok(EncodeReport {
             output: self.config.output.clone(),
             frames_written: self.frames_written,
             pipe_write_ms: self.pipe_write_ms,
             total_ms: self.started.elapsed().as_secs_f64() * 1000.0,
             output_bytes,
+            extra_bytes,
             command: self.command.clone(),
         })
     }
@@ -438,7 +562,7 @@ impl Drop for FfmpegSink {
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = self.collect_stderr();
-        let _ = std::fs::remove_file(&self.tmp);
+        self.discard();
     }
 }
 
@@ -533,11 +657,13 @@ mod tests {
             profile: EncodeProfile::named("balanced").unwrap(),
             threads: Some(4),
             audio,
+            extra: Vec::new(),
+            resize: None,
         }
     }
 
     fn joined(c: &EncoderConfig) -> String {
-        c.args(Path::new("tmp.partial"))
+        c.args(Path::new("tmp.partial"), &[])
             .iter()
             .map(|a| a.to_string_lossy().into_owned())
             .collect::<Vec<_>>()
@@ -586,6 +712,66 @@ mod tests {
     }
 
     #[test]
+    fn extra_outputs_share_the_frames_and_the_audio() {
+        let mut c = config(vec![AudioTrack {
+            id: "mix".into(),
+            path: "mix.wav".into(),
+            start_frame: 0,
+            volume: 1.0,
+        }]);
+        c.width = 2160;
+        c.height = 3840;
+        c.profile = EncodeProfile::named("master").unwrap();
+        c.extra = vec![ScaledOutput {
+            output: "small.mp4".into(),
+            width: 1080,
+            height: 1920,
+            profile: EncodeProfile::named("balanced").unwrap(),
+        }];
+        let args = c.args(Path::new("big.partial"), &[PathBuf::from("small.partial")]);
+        let line = args.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ");
+        assert!(
+            line.contains("[0:v]split=2[v0][s1];[s1]scale=1080:1920:flags=lanczos+accurate_rnd+full_chroma_int[v1]"),
+            "{line}"
+        );
+        assert!(line.contains("[aout];[aout]asplit=2[a0][a1]"), "{line}");
+        // each file has its own maps and encode settings, and both carry the BT.709 tags
+        let (first, second) = line.split_once("big.partial").unwrap();
+        assert!(first.contains("-map [v0] -map [a0]") && first.contains("-preset medium -crf 17 -tune grain"), "{first}");
+        assert!(second.contains("-map [v1] -map [a1]") && second.contains("-preset medium -crf 18 -pix_fmt"), "{second}");
+        assert!(second.contains("-colorspace bt709") && second.ends_with("small.partial"), "{second}");
+        // without extras nothing changes: frames go straight from the pipe
+        let plain = joined(&config(vec![]));
+        assert!(plain.contains("-map 0:v:0 -an") && !plain.contains("split"), "{plain}");
+    }
+
+    #[test]
+    fn a_resized_main_output_is_the_only_encode() {
+        let mut c = config(vec![]);
+        c.width = 2160;
+        c.height = 3840;
+        c.resize = Some((1080, 1920));
+        let line = joined(&c);
+        assert!(line.contains("-video_size 2160x3840"), "{line}");
+        assert!(
+            line.contains("-filter_complex [0:v]scale=1080:1920:flags=lanczos+accurate_rnd+full_chroma_int[v0] -map [v0] -an"),
+            "{line}"
+        );
+        assert_eq!(line.matches("libx264").count(), 1, "{line}");
+        // together with an extra file, both come from the split
+        c.extra = vec![ScaledOutput {
+            output: "small.mp4".into(),
+            width: 540,
+            height: 960,
+            profile: EncodeProfile::named("balanced").unwrap(),
+        }];
+        let args = c.args(Path::new("big.partial"), &[PathBuf::from("small.partial")]);
+        let line = args.iter().map(|a| a.to_string_lossy()).collect::<Vec<_>>().join(" ");
+        assert!(line.contains("[0:v]split=2[s0][s1];[s0]scale=1080:1920:"), "{line}");
+        assert!(line.contains("[v0];[s1]scale=540:960:"), "{line}");
+    }
+
+    #[test]
     fn a_path_with_spaces_stays_one_argument() {
         let mut c = config(vec![]);
         c.audio = vec![AudioTrack {
@@ -594,7 +780,7 @@ mod tests {
             start_frame: 0,
             volume: 1.0,
         }];
-        let args = c.args(Path::new("out dir/tmp.partial"));
+        let args = c.args(Path::new("out dir/tmp.partial"), &[]);
         assert!(args.contains(&OsString::from("my music; rm -rf.mp3")));
         assert_eq!(args.last().unwrap(), &OsString::from("out dir/tmp.partial"));
     }

@@ -43,6 +43,57 @@ impl Scene {
     pub fn duration_seconds(&self) -> f64 {
         self.fps.frame_to_seconds(self.duration_frames as i64)
     }
+
+    /// The same composition at `factor` times the size. Nothing is resampled:
+    /// every layer sits under one more scale, so vector content (shapes, text,
+    /// baked frames) is drawn again at the larger size. Width and height are
+    /// rounded to even numbers, which the encoder needs.
+    pub fn scaled(&self, factor: f32) -> Scene {
+        let even = |v: u32| {
+            let x = (v as f32 * factor).round().max(2.0) as u32;
+            x + (x & 1)
+        };
+        let (width, height) = (even(self.width), even(self.height));
+        let mut nodes = self.nodes.clone();
+        let start = self.roots.iter().map(|&r| self.node(r).start).min().unwrap_or(0);
+        let end = self.roots.iter().map(|&r| self.node(r).end).max().unwrap_or(0);
+        nodes.push(Node {
+            id: "@scale".to_owned(),
+            start: start.min(0),
+            end: end.max(self.duration_frames as i64),
+            origin: 0,
+            pos_x: Prop::Const(0.0),
+            pos_y: Prop::Const(0.0),
+            scale_x: Prop::Const(width as f32 / self.width as f32),
+            scale_y: Prop::Const(height as f32 / self.height as f32),
+            rotation: Prop::Const(0.0),
+            anchor_x: Prop::Const(0.0),
+            anchor_y: Prop::Const(0.0),
+            opacity: Prop::Const(1.0),
+            blur: Prop::Const(0.0),
+            shadow: None,
+            blend: BlendMode::Normal,
+            kind: NodeKind::Group {
+                children: self.roots.clone(),
+                size: None,
+                clip: false,
+                radius: 0.0,
+            },
+        });
+        Scene {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            width,
+            height,
+            fps: self.fps,
+            duration_frames: self.duration_frames,
+            background: self.background,
+            roots: vec![(nodes.len() - 1) as NodeId],
+            nodes,
+            assets: self.assets.clone(),
+            audio: self.audio.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +101,8 @@ pub enum AssetKind {
     Image,
     Svg,
     Font,
+    /// A baked frame sequence (see [`FramePack`]).
+    Frames,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +117,39 @@ pub struct Asset {
     pub content_hash: u64,
     /// Family name a font is registered under.
     pub family: Option<String>,
+    /// Frame packs only: the parsed manifest. `bytes` then holds the manifest file.
+    pub pack: Option<Arc<FramePack>>,
+}
+
+/// Where one baked frame lives inside a pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameEntry {
+    /// Index into [`FramePack::shards`].
+    pub shard: u32,
+    pub offset: u64,
+    /// Compressed (zlib) length in the shard.
+    pub len: u32,
+    /// Length after decompression; checked before allocating.
+    pub raw_len: u32,
+    /// Frames with the same content id hold identical drawings, so equal ids
+    /// evaluate to equal frame plans and the frame is not rendered twice.
+    pub content: u32,
+}
+
+/// A baked frame sequence: for every frame a display list (SVG documents and
+/// shader passes) produced outside NOVA, for example by running a Remotion
+/// composition without a browser. NOVA only rasterises it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FramePack {
+    pub width: u32,
+    pub height: u32,
+    /// Shard files, already resolved and checked to lie under the asset root.
+    pub shards: Vec<PathBuf>,
+    pub index: Vec<FrameEntry>,
+    /// (key, SkSL source) of every shader the frames reference.
+    pub shaders: Vec<(String, String)>,
+    /// Folder that files referenced from the frames (images) resolve against.
+    pub dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -360,6 +446,14 @@ pub enum NodeKind {
         size: Option<[f32; 2]>,
         fit: Fit,
     },
+    /// One frame of a baked sequence per composition frame; local frame 0 of
+    /// the layer shows the pack's first frame, and the last frame is held.
+    Frames {
+        asset: AssetId,
+        size: [f32; 2],
+        /// Number of frames in the pack.
+        frames: u32,
+    },
     /// `radius` rounds the corners of the clip (only used when `clip` is set).
     Group {
         children: Vec<NodeId>,
@@ -410,6 +504,7 @@ impl Node {
             NodeKind::Path { .. } => "path",
             NodeKind::Text(_) => "text",
             NodeKind::Image { .. } => "image",
+            NodeKind::Frames { .. } => "frames",
             NodeKind::Group { .. } => "group",
         }
     }
@@ -481,6 +576,13 @@ impl Node {
                 add(t.letter_spacing.key_span());
                 if let Some(r) = &t.reveal {
                     add(r.count.key_span());
+                }
+                (None, None)
+            }
+            NodeKind::Frames { frames, .. } => {
+                // The drawing changes every frame for as long as the pack lasts.
+                if *frames > 1 {
+                    add(Some((0.0, *frames as f64)));
                 }
                 (None, None)
             }
@@ -557,6 +659,7 @@ impl Node {
                     && t.letter_spacing.is_const()
                     && t.reveal.as_ref().is_none_or(|r| r.count.is_const())
             }
+            NodeKind::Frames { frames, .. } => *frames <= 1,
             NodeKind::Image { .. } | NodeKind::Group { .. } => true,
         }
     }

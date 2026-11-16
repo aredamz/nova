@@ -221,6 +221,84 @@ fn render_writes_a_verified_mp4_and_a_json_report() {
 }
 
 #[test]
+fn scale_draws_larger_and_also_writes_the_template_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let template = write_template(dir.path(), SMALL);
+    // a preview at twice the size
+    let png = dir.path().join("big.png");
+    let out = run(nova()
+        .arg("preview")
+        .arg(&template)
+        .args(["--scale", "2", "--frame", "0", "-o"])
+        .arg(&png));
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let bytes = std::fs::read(&png).unwrap();
+    let dim = |at: usize| u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap());
+    assert_eq!((dim(16), dim(20)), (640, 360));
+
+    if Command::new("ffmpeg").arg("-version").output().is_err() {
+        eprintln!("skipped: ffmpeg not installed");
+        return;
+    }
+    let (big, small) = (dir.path().join("big.mp4"), dir.path().join("small.mp4"));
+    let out = run(nova()
+        .arg("render")
+        .arg(&template)
+        .arg("-o")
+        .arg(&big)
+        .arg("--also")
+        .arg(&small)
+        .args(["--scale", "2", "--profile", "master", "--preset", "veryfast", "--threads", "2", "--json"]));
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["composition"]["width"], 640);
+    assert_eq!(report["encode"]["tune"], "grain");
+    assert_eq!(report["encode"]["also"]["width"], 320);
+    assert_eq!(report["encode"]["also"]["height"], 180);
+    assert_eq!(report["verified_frames"], 45);
+    let size = |p: &Path| {
+        let o = Command::new("ffprobe")
+            .args(["-v", "error", "-select_streams", "v:0", "-count_packets"])
+            .args(["-show_entries", "stream=width,height,nb_read_packets", "-of", "csv=p=0"])
+            .arg(p)
+            .output()
+            .unwrap();
+        text(&o.stdout).trim().to_owned()
+    };
+    assert_eq!(size(&big), "640,360,45");
+    assert_eq!(size(&small), "320,180,45");
+
+    // --supersample: drawn at 2x, only the template-size file is written
+    let only = dir.path().join("only.mp4");
+    let out = run(nova()
+        .arg("render")
+        .arg(&template)
+        .arg("-o")
+        .arg(&only)
+        .args(["--scale", "2", "--supersample", "--preset", "veryfast", "--threads", "2", "--json"]));
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["composition"]["width"], 640);
+    assert_eq!(report["output_size"]["width"], 320);
+    assert_eq!(size(&only), "320,180,45");
+    // without --scale there is nothing to reduce
+    let out = run(nova().arg("render").arg(&template).arg("-o").arg(&only).arg("--supersample"));
+    assert!(!out.status.success());
+    assert!(text(&out.stderr).contains("--scale above 1"), "{}", text(&out.stderr));
+
+    // --also at the output's own size is a mistake, not a silent duplicate
+    let out = run(nova()
+        .arg("render")
+        .arg(&template)
+        .arg("-o")
+        .arg(&big)
+        .arg("--also")
+        .arg(&small));
+    assert!(!out.status.success());
+    assert!(text(&out.stderr).contains("same size"), "{}", text(&out.stderr));
+}
+
+#[test]
 fn bad_options_are_rejected_clearly() {
     let dir = tempfile::tempdir().unwrap();
     let template = write_template(dir.path(), SMALL);

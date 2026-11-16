@@ -70,6 +70,9 @@ pub enum AssetType {
     Image,
     Svg,
     Font,
+    /// A baked frame sequence: `src` is the pack's `frames.json` manifest,
+    /// its shard files lie next to it. Used by `frames` layers.
+    Frames,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -119,6 +122,9 @@ pub enum LayerType {
     Image,
     /// Static SVG file. Needs `asset`.
     Svg,
+    /// A baked frame sequence, one drawing per frame. Needs `asset` (a
+    /// `frames` asset). `size` defaults to the pack's own size.
+    Frames,
     /// Container for child `layers`; also acts as a sequence (its
     /// `start_frame` shifts the children's time).
     Group,
@@ -134,6 +140,7 @@ impl LayerType {
             LayerType::Text => "text",
             LayerType::Image => "image",
             LayerType::Svg => "svg",
+            LayerType::Frames => "frames",
             LayerType::Group => "group",
         }
     }
@@ -204,7 +211,7 @@ pub struct Layer {
     /// text: content and style.
     #[serde(default)]
     pub text: Option<TextDef>,
-    /// image, svg: id of the asset to draw.
+    /// image, svg, frames: id of the asset to draw.
     #[serde(default)]
     pub asset: Option<String>,
     /// image, svg: how the asset fits `size`. Default contain.

@@ -19,6 +19,10 @@ pub struct Limits {
     /// Largest side an SVG is ever rasterised at.
     pub max_svg_raster_side: u32,
     pub max_blur_sigma: f32,
+    /// Decompressed size of one baked frame (its whole display list).
+    pub max_frame_bytes: u32,
+    /// Shard files one frame pack may be split into.
+    pub max_pack_shards: usize,
 }
 
 impl Default for Limits {
@@ -38,6 +42,8 @@ impl Default for Limits {
             max_decoded_image_bytes: 256 * 1024 * 1024,
             max_svg_raster_side: 4096,
             max_blur_sigma: 250.0,
+            max_frame_bytes: 64 * 1024 * 1024,
+            max_pack_shards: 256,
         }
     }
 }

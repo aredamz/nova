@@ -1,0 +1,12 @@
+{
+  "name": "nova-remotion-bake-example",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A small Remotion composition rendered by NOVA without a browser",
+  "dependencies": {
+    "esbuild": "^0.28.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "4.0.542"
+  }
+}

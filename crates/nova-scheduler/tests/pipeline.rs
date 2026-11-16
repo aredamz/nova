@@ -324,6 +324,8 @@ fn encoder_config(scene: &Scene, output: &Path, ffmpeg: &str) -> EncoderConfig {
         profile: EncodeProfile::named("preview").unwrap(),
         threads: Some(2),
         audio: vec![],
+        extra: vec![],
+        resize: None,
     }
 }
 
@@ -400,6 +402,7 @@ fn colours_survive_the_encode() {
         name: "test".into(),
         preset: "medium".into(),
         crf: 4,
+        tune: None,
     };
     let mut sink = FfmpegSink::start(cfg).unwrap();
     render(

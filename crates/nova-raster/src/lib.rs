@@ -50,6 +50,11 @@ pub struct RendererStats {
     pub layer_cache_hits: u64,
     /// Cached layers that had to be rendered (first use, or content changed).
     pub layer_cache_misses: u64,
+    /// Baked frames drawn, and where their time went (microseconds).
+    pub baked_frames: u64,
+    pub baked_read_us: u64,
+    pub baked_parse_us: u64,
+    pub baked_raster_us: u64,
 }
 
 impl RendererStats {
@@ -60,5 +65,9 @@ impl RendererStats {
         self.offscreen_layers += o.offscreen_layers;
         self.layer_cache_hits += o.layer_cache_hits;
         self.layer_cache_misses += o.layer_cache_misses;
+        self.baked_frames += o.baked_frames;
+        self.baked_read_us += o.baked_read_us;
+        self.baked_parse_us += o.baked_parse_us;
+        self.baked_raster_us += o.baked_raster_us;
     }
 }

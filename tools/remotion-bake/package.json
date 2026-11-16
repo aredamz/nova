@@ -1,0 +1,4 @@
+{ "name": "nova-remotion-bake", "private": true, "version": "0.1.0", "type": "module",
+  "description": "Bakar komposisi Remotion (React) kepada pek frame NOVA tanpa pelayar",
+  "scripts": { "test": "node --test test.mjs" },
+  "dependencies": { "opentype.js": "^1.3.4" } }

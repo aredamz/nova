@@ -22,7 +22,8 @@ pub use eval::{EvalFill, EvalKind, EvalNode, EvalShadow, EvalStroke, FramePlan};
 pub use geometry::{Affine, Rect};
 pub use limits::Limits;
 pub use scene::{
-    Asset, AssetId, AssetKind, AudioTrack, BlendMode, Fill, Fit, GradientStop, LineCap, LineJoin,
+    Asset, AssetId, AssetKind, AudioTrack, BlendMode, Fill, Fit, FrameEntry, FramePack,
+    GradientStop, LineCap, LineJoin,
     Node, NodeId, NodeKind, Reveal, RevealUnit, Scene, Shadow, Stroke, TextAlign, TextBox,
     TextNode, TextSpan,
 };

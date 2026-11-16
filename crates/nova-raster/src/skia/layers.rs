@@ -165,7 +165,7 @@ fn analyse(scene: &Scene, id: NodeId, out: &mut [Subtree]) {
         |f: &Option<Fill>| matches!(f, Some(Fill::Linear { .. }) | Some(Fill::Radial { .. }));
     sub.expensive = node.has_filter()
         || match &node.kind {
-            NodeKind::Image { .. } => true,
+            NodeKind::Image { .. } | NodeKind::Frames { .. } => true,
             NodeKind::Rect { fill, .. }
             | NodeKind::Ellipse { fill, .. }
             | NodeKind::Path { fill, .. } => gradient(fill),

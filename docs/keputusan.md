@@ -168,6 +168,56 @@ Pilihan kaedah dibuat daripada scene sahaja (opacity dan blur mesti malar), jadi
 tidak pernah bertukar kaedah di tengah video. Bitmap yang tiada piksel lutsinar ditanda
 legap supaya Skia menyalin, bukan mengadun.
 
+### 15. Frame bake: pek di luar templat, dilukis oleh Skia
+
+Templat tanpa kod tidak boleh menyatakan geometri yang dikira semula setiap frame (rig
+prosedur, unjuran 3D, lorekan cel melalui klip). Daripada menambah bahasa ekspresi kepada
+templat, yang akan memecahkan sifat "templat tidak mengandungi kod", NOVA menerima hasil
+kod itu: satu senarai lukisan bagi setiap frame, dibakar di luar dan dilayan sebagai aset
+yang tidak dipercayai. Templat kekal deklaratif; layer `frames` hanyalah satu lagi layer.
+
+`resvg` tidak dipakai untuk melukisnya (35 s sebingkai pada frame ±2,000 elemen). Pelukis
+sendiri di atas Skia memakai `usvg` sebagai penghurai sahaja. Butiran dan dua perbezaan
+yang disengajakan daripada pelayar ada dalam [`bake-remotion.md`](bake-remotion.md).
+
+### 16. Audio komposisi dibakar sebagai kiu, dicampur di luar enjin
+
+Sama seperti gambar, bunyi episod ditentukan oleh kod (`<Audio>` dalam `<Sequence>`, volum
+sebagai fungsi frame). Semasa bake, `<Audio>` merekod apa yang akan berbunyi pada setiap frame;
+rekod itu menjadi senarai kiu (`audio.json`) dan `tools/remotion-bake/mix.mjs` mencampurnya
+menjadi satu trek yang templat rujuk seperti audio lain. Enjin tidak berubah: model audio NOVA
+(senarai trek dengan `start_frame` dan `volume`) tidak boleh menyatakan volum per frame, gelung
+dan kadar main, dan menambahnya ke templat akan meniru Web Audio di dalam enjin render. Nilai
+dan urutan mengikut `AudioForRendering` Remotion; ketepatan diukur dalam
+[`bake-remotion.md`](bake-remotion.md).
+
+Fon generik dan sandaran aksara bagi frame yang dibakar mengikut pelayar, bukan lalai `fontdb`:
+teks itu ditulis untuk Chrome, dan `sans-serif` yang jatuh pada fon lain mengubah lebar setiap
+baris. Ini hanya terpakai apabila fon sistem dibenarkan; ujian kekal tanpa fon sistem.
+
+### 17. Kualiti melebihi rujukan: resolusi dan pengekodan, bukan pensampelan masa
+
+Tiga cara untuk menghasilkan output yang lebih baik daripada render pelayar diukur pada dua
+episod sebenar sebelum memilih:
+
+- **Motion blur atau 60 fps melalui penilaian pecahan frame** ditolak. Kod komposisi ditulis
+  untuk frame integer: pada satu episod 30% sampel pecahan menghasilkan warna `NaN`
+  (heks dibina daripada nombor frame), dan kesan satu-frame (`frame === 81`) hilang atau
+  menjadi 1/N keamatannya. Enjin tidak boleh membetulkan itu tanpa mengubah maksud kod.
+- **Kedalaman bit lebih tinggi** tidak memberi apa-apa di sini: grain shader (±6 aras) sudah
+  menutup jalur gradien.
+- **Skala render** (`--scale`) dan **profil `master`** dipilih. Pada frame yang sama, pengekodan
+  rujukan (x264 medium, CRF 18) hanya mengekalkan 43.5 dB daripada frame asal dan melenyapkan
+  grain; itulah titik paling lemah, dan ia sama pada fail Remotion. Pada 4K setiap garis
+  halus mendapat empat kali piksel, dan pengekod mendapat isyarat yang lebih mudah.
+
+`--scale` membungkus akar scene dalam satu group berskala, jadi setiap jenis layer dan cache
+layer (yang sememangnya dalam ruang peranti) berfungsi tanpa perubahan. Shader pass frame bake
+sentiasa dibuat pada resolusi pek dan dibesarkan (Catmull-Rom): grain yang ditulis per piksel
+kekal saiznya, dan kosnya tidak naik empat kali. `--also` membahagi frame yang sama dalam
+FFmpeg kepada fail kedua yang dikecilkan (Lanczos) — fail 1080p itu ialah render 4K yang
+disampel turun, bukan render kedua.
+
 ## Definition of Done pelan (seksyen 23)
 
 | Item | Status |
@@ -181,7 +231,7 @@ legap supaya Skia menyalin, bukan mengadun.
 | Kegagalan FFmpeg dikesan | Ya (diuji: binari tiada, proses mati di tengah) |
 | Susunan frame betul walaupun worker siap tidak tertib | Ya (diuji) |
 | Had memori dan queue boleh dikonfigurasi | Ya (`--window`, bajet cache layer, `Limits`) |
-| Ujian unit, integrasi, golden | Ya (125 ujian) |
+| Ujian unit, integrasi, golden | Ya (138 ujian Rust; 13 ujian pembakar) |
 | Benchmark 1/2/4/8/12/16 thread direkodkan | **Separa:** 1/2/4/8 pada laptop; 12/16 menunggu VPS |
 | Output deterministik merentas bilangan thread | Ya (diuji bit demi bit) |
 | Had keselamatan untuk laluan, SVG, aset | Ya; tiada had bilangan nod SVG (hanya saiz fail dan saiz raster) |

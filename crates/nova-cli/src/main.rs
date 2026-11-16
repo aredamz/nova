@@ -56,6 +56,10 @@ pub struct InputArgs {
     /// Use only fonts listed in the template; never fall back to this machine's fonts
     #[arg(long)]
     pub no_system_fonts: bool,
+    /// Draw everything at this multiple of the template's size (2 turns 1080x1920 into 2160x3840).
+    /// Shapes, text and baked frames are drawn again at the larger size, not enlarged
+    #[arg(long, value_name = "FACTOR", default_value_t = 1.0)]
+    pub scale: f32,
 }
 
 #[derive(Args)]

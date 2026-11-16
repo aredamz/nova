@@ -52,12 +52,21 @@
       "type": "object"
     },
     "AssetType": {
-      "enum": [
-        "image",
-        "svg",
-        "font"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "image",
+            "svg",
+            "font"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "frames",
+          "description": "A baked frame sequence: `src` is the pack's `frames.json` manifest,\nits shard files lie next to it. Used by `frames` layers.",
+          "type": "string"
+        }
+      ]
     },
     "AudioDef": {
       "additionalProperties": false,
@@ -435,7 +444,7 @@
         },
         "asset": {
           "default": null,
-          "description": "image, svg: id of the asset to draw.",
+          "description": "image, svg, frames: id of the asset to draw.",
           "type": [
             "string",
             "null"
@@ -681,6 +690,11 @@
         {
           "const": "svg",
           "description": "Static SVG file. Needs `asset`.",
+          "type": "string"
+        },
+        {
+          "const": "frames",
+          "description": "A baked frame sequence, one drawing per frame. Needs `asset` (a\n`frames` asset). `size` defaults to the pack's own size.",
           "type": "string"
         },
         {
