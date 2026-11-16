@@ -58,6 +58,7 @@ jobs:
         run: cargo test --workspace --release --no-fail-fast 2>&1 | tee -a ci.log
 
       - name: Render the template examples
+        if: ${{ !cancelled() }}
         run: |
           export PATH="$PWD/target/release:$PATH"
           mkdir -p out
@@ -69,10 +70,12 @@ jobs:
           } 2>&1 | tee -a ci.log
 
       - name: Bake tools - tests
+        if: ${{ !cancelled() }}
         run: |
           (cd tools/remotion-bake && npm install && npm test) 2>&1 | tee -a ci.log
 
       - name: Bake tools - render the Remotion example
+        if: ${{ !cancelled() }}
         run: |
           (cd examples/remotion-bake && npm install) 2>&1 | tee -a ci.log
           {
@@ -88,7 +91,8 @@ jobs:
         if: failure()
         run: |
           {
-            grep -nE "panicked|FAILED|^error|error:|differ|not ok|✖|failed|cannot|No such" ci.log | tail -n 30 || true
+            grep -nE -A2 "panicked at" ci.log | tail -n 30 || true
+            grep -nE "FAILED|^error|error:|not ok|✖|failed|cannot|No such|amaran|warning:" ci.log | tail -n 30 || true
             echo "---- last lines ----"
             tail -n 30 ci.log || true
           } > summary.txt
